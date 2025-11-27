@@ -63,11 +63,25 @@ func main() {
 	meshService := services.NewMeshService(peerRepo, meshRepo)
 	streamService := services.NewStreamService(streamRepo, peerRepo, meshRepo, meshService, metricsService)
 
-	// WebRTC configuration
-	webrtcConfig := webrtcinfra.WebRTCConfig{
-		ICEServers: []webrtc.ICEServer{
+	// WebRTC configuration (including STUN/TURN from config)
+	var iceServers []webrtc.ICEServer
+	if len(cfg.WebRTC.ICEServers) > 0 {
+		for _, s := range cfg.WebRTC.ICEServers {
+			iceServers = append(iceServers, webrtc.ICEServer{
+				URLs:       s.URLs,
+				Username:   s.Username,
+				Credential: s.Credential,
+			})
+		}
+	} else {
+		// Fallback STUN server if not configured
+		iceServers = []webrtc.ICEServer{
 			{URLs: []string{"stun:stun.l.google.com:19302"}},
-		},
+		}
+	}
+
+	webrtcConfig := webrtcinfra.WebRTCConfig{
+		ICEServers: iceServers,
 		Simulcast:  cfg.WebRTC.Simulcast,
 		MaxBitrate: cfg.WebRTC.MaxBitrate,
 	}

@@ -23,7 +23,9 @@ type Config struct {
 
 	WebRTC struct {
 		ICEServers []struct {
-			URLs []string `yaml:"urls"`
+			URLs       []string `yaml:"urls"`
+			Username   string   `yaml:"username,omitempty"`
+			Credential string   `yaml:"credential,omitempty"`
 		} `yaml:"ice_servers"`
 		PortRange struct {
 			Min uint16 `yaml:"min"`
