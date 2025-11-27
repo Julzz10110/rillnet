@@ -1,0 +1,34 @@
+server:
+  address: ":8080"
+  read_timeout: 30s
+  write_timeout: 30s
+
+signal:
+  address: ":8081"
+  ping_interval: 30s
+  pong_timeout: 60s
+
+webrtc:
+  ice_servers:
+    - urls:
+        - "stun:stun.l.google.com:19302"
+        - "stun:stun1.l.google.com:19302"
+  port_range:
+    min: 50000
+    max: 60000
+  simulcast: true
+  max_bitrate: 5000
+
+mesh:
+  max_connections: 4
+  health_check_interval: 10s
+  reconnect_attempts: 3
+
+monitoring:
+  prometheus_enabled: true
+  prometheus_port: 9090
+  metrics_interval: 30s
+
+logging:
+  level: "info"
+  format: "json"

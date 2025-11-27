@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RillNet Demo</title>
+    <style>
+        video { width: 400px; height: 300px; border: 1px solid #ccc; }
+        .container { display: flex; gap: 20px; }
+        .controls { margin: 20px 0; }
+        button { padding: 10px 20px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>RillNet P2P Streaming Demo</h1>
+    
+    <div class="controls">
+        <button onclick="startStream()">Start Stream</button>
+        <button onclick="stopStream()">Stop Stream</button>
+        <button onclick="joinStream()">Join Stream</button>
+        <button onclick="leaveStream()">Leave Stream</button>
+    </div>
+
+    <div class="container">
+        <div>
+            <h3>Publisher</h3>
+            <video id="localVideo" autoplay muted></video>
+        </div>
+        <div>
+            <h3>Subscriber</h3>
+            <video id="remoteVideo" autoplay></video>
+        </div>
+    </div>
+
+    <div id="status">Status: Ready</div>
+
+    <script>
+        let localStream = null;
+        let peerConnection = null;
+        const streamId = 'demo-stream';
+
+        async function startStream() {
+            try {
+                // Получаем доступ к камере и микрофону
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: true
+                });
+                
+                document.getElementById('localVideo').srcObject = localStream;
+                updateStatus('Local stream started');
+                
+                // Здесь будет логика подключения к SFU как публикатор
+                await connectAsPublisher();
+                
+            } catch (error) {
+                console.error('Error starting stream:', error);
+                updateStatus('Error: ' + error.message);
+            }
+        }
+
+        async function connectAsPublisher() {
+            // Реализация WebRTC соединения с SFU
+            updateStatus('Connecting to SFU as publisher...');
+        }
+
+        async function joinStream() {
+            // Реализация подключения как подписчик
+            updateStatus('Joining stream as subscriber...');
+        }
+
+        function updateStatus(message) {
+            document.getElementById('status').textContent = 'Status: ' + message;
+        }
+
+        function stopStream() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            updateStatus('Stream stopped');
+        }
+    </script>
+</body>
+</html>

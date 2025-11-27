@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RillNet - P2P Video Streaming Platform</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <h1>🎥 RillNet</h1>
+                    <span class="tagline">Decentralized P2P Streaming</span>
+                </div>
+                <div class="connection-status">
+                    <div class="status-indicator" id="connectionStatus">Disconnected</div>
+                    <div class="server-info" id="serverInfo">Connecting to servers...</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Stream Controls -->
+            <section class="control-panel">
+                <div class="control-group">
+                    <h3>🎬 Stream Management</h3>
+                    <div class="button-group">
+                        <button id="startPublisher" class="btn btn-primary">
+                            <span class="btn-icon">▶️</span>
+                            Start Publishing
+                        </button>
+                        <button id="stopPublisher" class="btn btn-danger" disabled>
+                            <span class="btn-icon">⏹️</span>
+                            Stop Publishing
+                        </button>
+                        <button id="switchCamera" class="btn btn-secondary">
+                            <span class="btn-icon">🔄</span>
+                            Switch Camera
+                        </button>
+                    </div>
+                    <div class="quality-selector">
+                        <button class="quality-btn" data-quality="low">360p</button>
+                        <button class="quality-btn active" data-quality="medium">720p</button>
+                        <button class="quality-btn" data-quality="high">1080p</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>👥 Viewer Controls</h3>
+                    <div class="button-group">
+                        <button id="joinStream" class="btn btn-success">
+                            <span class="btn-icon">👥</span>
+                            Join Stream
+                        </button>
+                        <button id="leaveStream" class="btn btn-danger" disabled>
+                            <span class="btn-icon">🚪</span>
+                            Leave Stream
+                        </button>
+                        <button id="refreshStream" class="btn btn-secondary">
+                            <span class="btn-icon">🔄</span>
+                            Refresh
+                        </button>
+                    </div>
+                    <div class="stream-selector">
+                        <select id="streamList" class="stream-dropdown">
+                            <option value="">Select a stream...</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Video Panels -->
+            <section class="video-section">
+                <div class="video-panel">
+                    <div class="panel-header">
+                        <h3>📹 Publisher Stream</h3>
+                        <div class="stream-info" id="publisherInfo">Not streaming</div>
+                    </div>
+                    <div class="video-container">
+                        <video id="localVideo" autoplay muted playsinline></video>
+                        <div class="video-overlay active" id="localOverlay">
+                            <div class="overlay-content">
+                                <span class="overlay-icon">📹</span>
+                                <span>Camera Preview</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="video-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Resolution:</span>
+                            <span class="stat-value" id="localResolution">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Bitrate:</span>
+                            <span class="stat-value" id="localBitrate">- kbps</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">FPS:</span>
+                            <span class="stat-value" id="localFPS">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="video-panel">
+                    <div class="panel-header">
+                        <h3>👥 Subscriber View</h3>
+                        <div class="stream-info" id="subscriberInfo">Not connected</div>
+                    </div>
+                    <div class="video-container">
+                        <video id="remoteVideo" autoplay playsinline></video>
+                        <div class="video-overlay active" id="remoteOverlay">
+                            <div class="overlay-content">
+                                <span class="overlay-icon">⏳</span>
+                                <span>Waiting for stream...</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="video-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Resolution:</span>
+                            <span class="stat-value" id="remoteResolution">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Bitrate:</span>
+                            <span class="stat-value" id="remoteBitrate">- kbps</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Latency:</span>
+                            <span class="stat-value" id="remoteLatency">- ms</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Metrics Dashboard -->
+            <section class="metrics-section">
+                <div class="metrics-panel">
+                    <h3>📊 Network Metrics</h3>
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-icon">👥</div>
+                            <div class="metric-content">
+                                <div class="metric-value" id="peerCount">0</div>
+                                <div class="metric-label">Connected Peers</div>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon">📺</div>
+                            <div class="metric-content">
+                                <div class="metric-value" id="streamCount">0</div>
+                                <div class="metric-label">Active Streams</div>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon">🌐</div>
+                            <div class="metric-content">
+                                <div class="metric-value" id="bandwidth">0</div>
+                                <div class="metric-label">Bandwidth (kbps)</div>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon">⚡</div>
+                            <div class="metric-content">
+                                <div class="metric-value" id="latency">0</div>
+                                <div class="metric-label">Latency (ms)</div>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon">📦</div>
+                            <div class="metric-content">
+                                <div class="metric-value" id="packetLoss">0%</div>
+                                <div class="metric-label">Packet Loss</div>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon">🔄</div>
+                            <div class="metric-content">
+                                <div class="metric-value" id="connections">0</div>
+                                <div class="metric-label">P2P Connections</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Connection Log -->
+            <section class="log-section">
+                <div class="log-panel">
+                    <div class="log-header">
+                        <h3>📝 Connection Log</h3>
+                        <div class="log-filters">
+                            <label>
+                                <input type="checkbox" id="filterInfo" checked> Info
+                            </label>
+                            <label>
+                                <input type="checkbox" id="filterSuccess" checked> Success
+                            </label>
+                            <label>
+                                <input type="checkbox" id="filterWarning" checked> Warning
+                            </label>
+                            <label>
+                                <input type="checkbox" id="filterError" checked> Error
+                            </label>
+                        </div>
+                    </div>
+                    <div class="log-container">
+                        <div id="connectionLog" class="log-entries">
+                            > RillNet application starting...
+                            > Web interface loaded successfully
+                            > Ready to connect to P2P network
+                        </div>
+                    </div>
+                    <div class="log-controls">
+                        <button id="clearLog" class="btn btn-secondary btn-sm">Clear Log</button>
+                        <button id="exportLog" class="btn btn-secondary btn-sm">Export Log</button>
+                        <button id="autoScroll" class="btn btn-secondary btn-sm active">Auto Scroll</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- JavaScript Modules -->
+    <script>
+        // Logger Utility
+        class Logger {
+            constructor(prefix = 'App') {
+                this.prefix = prefix;
+                this.logs = [];
+                this.autoScroll = true;
+                this.filters = {
+                    info: true,
+                    success: true,
+                    warning: true,
+                    error: true
+                };
+            }
+
+            log(level, message, data = null) {
+                const timestamp = new Date().toLocaleTimeString();
+                const logEntry = {
+                    timestamp,
+                    level,
+                    message,
+                    data,
+                    prefix: this.prefix
+                };
+
+                this.logs.push(logEntry);
+                this.displayLog(logEntry);
+            }
+
+            info(message, data = null) {
+                this.log('info', message, data);
+            }
+
+            success(message, data = null) {
+                this.log('success', message, data);
+            }
+
+            warning(message, data = null) {
+                this.log('warning', message, data);
+            }
+
+            error(message, data = null) {
+                this.log('error', message, data);
+            }
+
+            displayLog(entry) {
+                if (!this.filters[entry.level]) return;
+
+                const logContainer = document.getElementById('connectionLog');
+                if (!logContainer) return;
+
+                const logElement = document.createElement('div');
+                logElement.className = `log-entry log-level-${entry.level}`;
+                logElement.innerHTML = `
+                    <span class="log-timestamp">[${entry.timestamp}]</span>
+                    <span class="log-prefix">${entry.prefix}:</span>
+                    <span class="log-message">${entry.message}</span>
+                `;
+
+                logContainer.appendChild(logElement);
+
+                if (this.autoScroll) {
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+            }
+
+            clear() {
+                this.logs = [];
+                const logContainer = document.getElementById('connectionLog');
+                if (logContainer) {
+                    logContainer.innerHTML = '';
+                }
+            }
+
+            setAutoScroll(enabled) {
+                this.autoScroll = enabled;
+                const button = document.getElementById('autoScroll');
+                if (button) {
+                    button.classList.toggle('active', enabled);
+                }
+            }
+
+            setFilters(filters) {
+                this.filters = { ...this.filters, ...filters };
+                this.refreshLogDisplay();
+            }
+
+            refreshLogDisplay() {
+                const logContainer = document.getElementById('connectionLog');
+                if (!logContainer) return;
+
+                logContainer.innerHTML = '';
+                this.logs.forEach(entry => this.displayLog(entry));
+            }
+
+            export() {
+                const logText = this.logs.map(entry => 
+                    `[${entry.timestamp}] ${entry.prefix} [${entry.level.toUpperCase()}]: ${entry.message}`
+                ).join('\n');
+
+                const blob = new Blob([logText], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `rillnet-log-${new Date().toISOString().split('T')[0]}.txt`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            getLogs() {
+                return this.logs;
+            }
+        }
+
+        // Signal Client (Mock)
+        class SignalClient {
+            constructor() {
+                this.connected = false;
+                this.eventHandlers = {};
+            }
+
+            async connect() {
+                return new Promise((resolve) => {
+                    setTimeout(() => {
+                        this.connected = true;
+                        this.emit('connected');
+                        resolve();
+                    }, 500);
+                });
+            }
+
+            on(event, handler) {
+                if (!this.eventHandlers[event]) {
+                    this.eventHandlers[event] = [];
+                }
+                this.eventHandlers[event].push(handler);
+            }
+
+            emit(event, data) {
+                if (this.eventHandlers[event]) {
+                    this.eventHandlers[event].forEach(handler => handler(data));
+                }
+            }
+
+            async publishStream(stream) {
+                return `stream-${Date.now()}`;
+            }
+
+            async unpublishStream(streamId) {
+                return true;
+            }
+
+            async getAvailableStreams() {
+                return [
+                    { id: 'stream-1', name: 'Main Stream', viewers: 5 },
+                    { id: 'stream-2', name: 'Demo Stream', viewers: 2 }
+                ];
+            }
+
+            async getServiceStatus() {
+                return {
+                    signal: 'connected',
+                    ingest: 'connected',
+                    web: 'connected'
+                };
+            }
+        }
+
+        // Metrics Collector
+        class MetricsCollector {
+            constructor() {
+                this.metrics = {
+                    peers: 0,
+                    streams: 0,
+                    bandwidth: 0,
+                    latency: 0,
+                    packetLoss: '0%',
+                    connections: 0
+                };
+                this.eventHandlers = {};
+            }
+
+            collect() {
+                this.metrics = {
+                    peers: Math.floor(Math.random() * 10),
+                    streams: Math.floor(Math.random() * 3) + 1,
+                    bandwidth: Math.floor(Math.random() * 5000) + 1000,
+                    latency: Math.floor(Math.random() * 50) + 10,
+                    packetLoss: (Math.random() * 2).toFixed(1) + '%',
+                    connections: Math.floor(Math.random() * 8) + 2
+                };
+
+                this.emit('metricsUpdate', this.metrics);
+                return this.metrics;
+            }
+
+            on(event, handler) {
+                if (!this.eventHandlers[event]) {
+                    this.eventHandlers[event] = [];
+                }
+                this.eventHandlers[event].push(handler);
+            }
+
+            emit(event, data) {
+                if (this.eventHandlers[event]) {
+                    this.eventHandlers[event].forEach(handler => handler(data));
+                }
+            }
+        }
+
+        // Stream Manager
+        class StreamManager {
+            constructor(signalClient) {
+                this.signalClient = signalClient;
+                this.localStream = null;
+                this.remoteStream = null;
+                this.peerConnection = null;
+                
+                this.currentStreamId = null;
+                this.isPublisher = false;
+                this.isSubscriber = false;
+                
+                this.videoQuality = 'medium';
+                this.eventHandlers = {};
+            }
+
+            on(event, handler) {
+                if (!this.eventHandlers[event]) {
+                    this.eventHandlers[event] = [];
+                }
+                this.eventHandlers[event].push(handler);
+            }
+
+            emit(event, data) {
+                if (this.eventHandlers[event]) {
+                    this.eventHandlers[event].forEach(handler => handler(data));
+                }
+            }
+
+            async startPublisher() {
+                try {
+                    const constraints = this.getVideoConstraints(this.videoQuality);
+                    this.localStream = await navigator.mediaDevices.getUserMedia({
+                        video: constraints,
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
+                    });
+
+                    const localVideo = document.getElementById('localVideo');
+                    localVideo.srcObject = this.localStream;
+                    localVideo.play().catch(console.error);
+
+                    await this.setupPeerConnection('publisher');
+                    
+                    this.isPublisher = true;
+                    this.emit('streamStarted', this.localStream);
+                    
+                    return this.localStream;
+
+                } catch (error) {
+                    console.error('Error starting publisher:', error);
+                    throw new Error(`Failed to access camera: ${error.message}`);
+                }
+            }
+
+            async stopPublisher() {
+                if (this.localStream) {
+                    this.localStream.getTracks().forEach(track => track.stop());
+                    this.localStream = null;
+                }
+
+                if (this.peerConnection) {
+                    this.peerConnection.close();
+                    this.peerConnection = null;
+                }
+
+                const localVideo = document.getElementById('localVideo');
+                if (localVideo) {
+                    localVideo.srcObject = null;
+                }
+
+                this.isPublisher = false;
+                this.emit('streamStopped');
+            }
+
+            async switchCamera() {
+                if (!this.localStream) return;
+
+                try {
+                    const videoTrack = this.localStream.getVideoTracks()[0];
+                    const constraints = videoTrack.getConstraints();
+                    
+                    constraints.facingMode = constraints.facingMode === 'user' ? 'environment' : 'user';
+                    
+                    const newStream = await navigator.mediaDevices.getUserMedia({
+                        video: constraints,
+                        audio: true
+                    });
+
+                    const newVideoTrack = newStream.getVideoTracks()[0];
+                    const sender = this.getVideoSender();
+                    
+                    if (sender) {
+                        await sender.replaceTrack(newVideoTrack);
+                        this.localStream.getVideoTracks()[0].stop();
+                    }
+
+                    this.localStream.removeTrack(this.localStream.getVideoTracks()[0]);
+                    this.localStream.addTrack(newVideoTrack);
+
+                    document.getElementById('localVideo').srcObject = this.localStream;
+
+                    this.emit('cameraSwitched');
+                    
+                } catch (error) {
+                    console.error('Error switching camera:', error);
+                    throw new Error(`Camera switch failed: ${error.message}`);
+                }
+            }
+
+            async joinStream(streamId) {
+                try {
+                    this.currentStreamId = streamId;
+                    await this.setupPeerConnection('subscriber');
+                    this.isSubscriber = true;
+                    this.emit('streamJoined', streamId);
+                    
+                } catch (error) {
+                    console.error('Error joining stream:', error);
+                    throw new Error(`Failed to join stream: ${error.message}`);
+                }
+            }
+
+            async leaveStream() {
+                if (this.peerConnection) {
+                    this.peerConnection.close();
+                    this.peerConnection = null;
+                }
+
+                if (this.remoteStream) {
+                    this.remoteStream.getTracks().forEach(track => track.stop());
+                    this.remoteStream = null;
+                }
+
+                const remoteVideo = document.getElementById('remoteVideo');
+                if (remoteVideo) {
+                    remoteVideo.srcObject = null;
+                }
+
+                this.isSubscriber = false;
+                this.currentStreamId = null;
+                this.emit('streamLeft');
+            }
+
+            async setupPeerConnection(role) {
+                const configuration = {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                };
+
+                this.peerConnection = new RTCPeerConnection(configuration);
+                this.setupPeerConnectionEvents();
+
+                if (role === 'publisher' && this.localStream) {
+                    this.localStream.getTracks().forEach(track => {
+                        this.peerConnection.addTrack(track, this.localStream);
+                    });
+                }
+
+                await this.simulateConnection(role);
+            }
+
+            setupPeerConnectionEvents() {
+                this.peerConnection.oniceconnectionstatechange = () => {
+                    const state = this.peerConnection.iceConnectionState;
+                    this.emit('iceConnectionStateChange', state);
+                };
+
+                this.peerConnection.onconnectionstatechange = () => {
+                    const state = this.peerConnection.connectionState;
+                    this.emit('connectionStateChange', state);
+                    
+                    if (state === 'connected') {
+                        this.emit('connectionEstablished');
+                    }
+                };
+
+                this.peerConnection.ontrack = (event) => {
+                    this.remoteStream = event.streams[0];
+                    
+                    const remoteVideo = document.getElementById('remoteVideo');
+                    if (remoteVideo) {
+                        remoteVideo.srcObject = this.remoteStream;
+                        remoteVideo.play().catch(console.error);
+                    }
+                    
+                    this.emit('streamReceived', this.remoteStream);
+                };
+            }
+
+            getVideoConstraints(quality) {
+                const constraints = {
+                    low: {
+                        width: { ideal: 640 },
+                        height: { ideal: 360 },
+                        frameRate: { ideal: 15, max: 30 }
+                    },
+                    medium: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 30, max: 60 }
+                    },
+                    high: {
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30, max: 60 }
+                    }
+                };
+                
+                return constraints[quality] || constraints.medium;
+            }
+
+            setVideoQuality(quality) {
+                this.videoQuality = quality;
+                
+                if (this.isPublisher && this.localStream) {
+                    const videoTrack = this.localStream.getVideoTracks()[0];
+                    const constraints = this.getVideoConstraints(quality);
+                    
+                    videoTrack.applyConstraints(constraints).catch(console.error);
+                }
+            }
+
+            getVideoSender() {
+                if (!this.peerConnection) return null;
+                
+                const senders = this.peerConnection.getSenders();
+                return senders.find(sender => 
+                    sender.track && sender.track.kind === 'video'
+                );
+            }
+
+            getLocalStats() {
+                if (!this.isPublisher) return null;
+                
+                return {
+                    resolution: this.getResolutionString(this.videoQuality),
+                    bitrate: Math.floor(Math.random() * 2000) + 500,
+                    fps: this.videoQuality === 'low' ? 15 : 30
+                };
+            }
+
+            getRemoteStats() {
+                if (!this.isSubscriber) return null;
+                
+                return {
+                    resolution: '1280x720',
+                    bitrate: Math.floor(Math.random() * 1500) + 300,
+                    latency: Math.floor(Math.random() * 100) + 20
+                };
+            }
+
+            getResolutionString(quality) {
+                const resolutions = {
+                    low: '640x360',
+                    medium: '1280x720',
+                    high: '1920x1080'
+                };
+                return resolutions[quality] || '1280x720';
+            }
+
+            async simulateConnection(role) {
+                return new Promise((resolve) => {
+                    setTimeout(() => {
+                        if (role === 'publisher') {
+                            this.emit('connectionEstablished');
+                        }
+                        resolve();
+                    }, 1000);
+                });
+            }
+        }
+
+        // Main Application
+        class RillNetApp {
+            constructor() {
+                this.signalClient = new SignalClient();
+                this.streamManager = new StreamManager(this.signalClient);
+                this.metricsCollector = new MetricsCollector();
+                this.logger = new Logger('RillNet');
+                
+                this.isPublisher = false;
+                this.isSubscriber = false;
+                this.currentStreamId = null;
+                
+                this.initializeApp();
+            }
+
+            async initializeApp() {
+                try {
+                    this.logger.info('Initializing RillNet application...');
+                    
+                    await this.initializeSignalConnection();
+                    this.initializeEventListeners();
+                    this.initializeUI();
+                    this.startMetricsCollection();
+                    
+                    this.logger.success('Application initialized successfully');
+                    
+                } catch (error) {
+                    this.logger.error('Failed to initialize application: ' + error.message);
+                }
+            }
+
+            async initializeSignalConnection() {
+                try {
+                    await this.signalClient.connect();
+                    this.setConnectionStatus('connected');
+                    
+                    this.signalClient.on('streamAvailable', (streamInfo) => {
+                        this.onStreamAvailable(streamInfo);
+                    });
+                    
+                    this.signalClient.on('streamEnded', (streamId) => {
+                        this.onStreamEnded(streamId);
+                    });
+                    
+                } catch (error) {
+                    this.logger.error('Signal connection failed: ' + error.message);
+                    this.setConnectionStatus('error');
+                }
+            }
+
+            initializeEventListeners() {
+                document.getElementById('startPublisher').addEventListener('click', () => this.startPublisher());
+                document.getElementById('stopPublisher').addEventListener('click', () => this.stopPublisher());
+                document.getElementById('switchCamera').addEventListener('click', () => this.switchCamera());
+
+                document.getElementById('joinStream').addEventListener('click', () => this.joinStream());
+                document.getElementById('leaveStream').addEventListener('click', () => this.leaveStream());
+                document.getElementById('refreshStream').addEventListener('click', () => this.refreshStreams());
+
+                document.querySelectorAll('.quality-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => this.changeQuality(e.target.dataset.quality));
+                });
+
+                document.getElementById('streamList').addEventListener('change', (e) => {
+                    this.selectStream(e.target.value);
+                });
+
+                document.getElementById('clearLog').addEventListener('click', () => this.logger.clear());
+                document.getElementById('exportLog').addEventListener('click', () => this.exportLog());
+                document.getElementById('autoScroll').addEventListener('click', (e) => {
+                    this.logger.setAutoScroll(e.target.classList.contains('active'));
+                });
+
+                document.querySelectorAll('.log-filters input').forEach(checkbox => {
+                    checkbox.addEventListener('change', () => this.updateLogFilters());
+                });
+            }
+
+            initializeUI() {
+                this.updatePublisherUI(false);
+                this.updateSubscriberUI(false);
+                this.updateMetrics({
+                    peers: 0,
+                    streams: 0,
+                    bandwidth: 0,
+                    latency: 0,
+                    packetLoss: '0%',
+                    connections: 0
+                });
+            }
+
+            async startPublisher() {
+                try {
+                    this.logger.info('Starting publisher...');
+                    
+                    const stream = await this.streamManager.startPublisher();
+                    this.currentStreamId = await this.signalClient.publishStream(stream);
+                    
+                    this.isPublisher = true;
+                    this.updatePublisherUI(true);
+                    this.updateStreamList();
+                    
+                    this.logger.success(`Publisher started with stream ID: ${this.currentStreamId}`);
+                    
+                } catch (error) {
+                    this.logger.error('Failed to start publisher: ' + error.message);
+                }
+            }
+
+            async stopPublisher() {
+                try {
+                    this.logger.info('Stopping publisher...');
+                    
+                    await this.streamManager.stopPublisher();
+                    if (this.currentStreamId) {
+                        await this.signalClient.unpublishStream(this.currentStreamId);
+                    }
+                    
+                    this.isPublisher = false;
+                    this.currentStreamId = null;
+                    this.updatePublisherUI(false);
+                    this.updateStreamList();
+                    
+                    this.logger.success('Publisher stopped');
+                    
+                } catch (error) {
+                    this.logger.error('Error stopping publisher: ' + error.message);
+                }
+            }
+
+            async switchCamera() {
+                try {
+                    this.logger.info('Switching camera...');
+                    await this.streamManager.switchCamera();
+                    this.logger.success('Camera switched successfully');
+                } catch (error) {
+                    this.logger.error('Error switching camera: ' + error.message);
+                }
+            }
+
+            async joinStream() {
+                try {
+                    const selectedStream = document.getElementById('streamList').value;
+                    if (!selectedStream) {
+                        this.logger.warning('Please select a stream first');
+                        return;
+                    }
+
+                    this.logger.info(`Joining stream: ${selectedStream}`);
+                    
+                    await this.streamManager.joinStream(selectedStream);
+                    this.isSubscriber = true;
+                    this.updateSubscriberUI(true);
+                    
+                    this.logger.success(`Successfully joined stream: ${selectedStream}`);
+                    
+                } catch (error) {
+                    this.logger.error('Failed to join stream: ' + error.message);
+                }
+            }
+
+            async leaveStream() {
+                try {
+                    this.logger.info('Leaving stream...');
+                    
+                    await this.streamManager.leaveStream();
+                    this.isSubscriber = false;
+                    this.updateSubscriberUI(false);
+                    
+                    this.logger.success('Left stream successfully');
+                    
+                } catch (error) {
+                    this.logger.error('Error leaving stream: ' + error.message);
+                }
+            }
+
+            async refreshStreams() {
+                try {
+                    this.logger.info('Refreshing available streams...');
+                    const streams = await this.signalClient.getAvailableStreams();
+                    this.updateStreamList(streams);
+                    this.logger.success(`Found ${streams.length} available streams`);
+                } catch (error) {
+                    this.logger.error('Error refreshing streams: ' + error.message);
+                }
+            }
+
+            updatePublisherUI(isActive) {
+                const startBtn = document.getElementById('startPublisher');
+                const stopBtn = document.getElementById('stopPublisher');
+                const infoEl = document.getElementById('publisherInfo');
+                const overlay = document.getElementById('localOverlay');
+
+                startBtn.disabled = isActive;
+                stopBtn.disabled = !isActive;
+
+                if (isActive) {
+                    infoEl.textContent = 'LIVE';
+                    infoEl.className = 'stream-info live';
+                    overlay.classList.remove('active');
+                } else {
+                    infoEl.textContent = 'OFFLINE';
+                    infoEl.className = 'stream-info';
+                    overlay.classList.add('active');
+                }
+            }
+
+            updateSubscriberUI(isActive) {
+                const joinBtn = document.getElementById('joinStream');
+                const leaveBtn = document.getElementById('leaveStream');
+                const infoEl = document.getElementById('subscriberInfo');
+                const overlay = document.getElementById('remoteOverlay');
+
+                joinBtn.disabled = isActive;
+                leaveBtn.disabled = !isActive;
+
+                if (isActive) {
+                    infoEl.textContent = 'CONNECTED';
+                    infoEl.className = 'stream-info live';
+                    overlay.classList.remove('active');
+                } else {
+                    infoEl.textContent = 'DISCONNECTED';
+                    infoEl.className = 'stream-info';
+                    overlay.classList.add('active');
+                }
+            }
+
+            updateStreamList(streams = []) {
+                const streamList = document.getElementById('streamList');
+                const currentValue = streamList.value;
+                
+                streamList.innerHTML = '<option value="">Select a stream...</option>';
+                
+                streams.forEach(stream => {
+                    const option = document.createElement('option');
+                    option.value = stream.id;
+                    option.textContent = `${stream.name} (${stream.viewers} viewers)`;
+                    streamList.appendChild(option);
+                });
+                
+                if (streams.find(s => s.id === currentValue)) {
+                    streamList.value = currentValue;
+                }
+            }
+
+            updateMetrics(metrics) {
+                document.getElementById('peerCount').textContent = metrics.peers;
+                document.getElementById('streamCount').textContent = metrics.streams;
+                document.getElementById('bandwidth').textContent = metrics.bandwidth;
+                document.getElementById('latency').textContent = metrics.latency;
+                document.getElementById('packetLoss').textContent = metrics.packetLoss;
+                document.getElementById('connections').textContent = metrics.connections;
+            }
+
+            onStreamAvailable(streamInfo) {
+                this.logger.info(`New stream available: ${streamInfo.name}`);
+                this.updateStreamList([...this.getCurrentStreams(), streamInfo]);
+            }
+
+            onStreamEnded(streamId) {
+                this.logger.info(`Stream ended: ${streamId}`);
+                const currentStreams = this.getCurrentStreams().filter(s => s.id !== streamId);
+                this.updateStreamList(currentStreams);
+                
+                if (this.isSubscriber && this.streamManager.currentStreamId === streamId) {
+                    this.leaveStream();
+                }
+            }
+
+            getCurrentStreams() {
+                const streamList = document.getElementById('streamList');
+                return Array.from(streamList.options)
+                    .slice(1)
+                    .map(option => ({
+                        id: option.value,
+                        name: option.textContent.split(' (')[0],
+                        viewers: parseInt(option.textContent.match(/\((\d+) viewers\)/)?.[1] || 0)
+                    }));
+            }
+
+            changeQuality(quality) {
+                this.logger.info(`Changing video quality to: ${quality}`);
+                
+                document.querySelectorAll('.quality-btn').forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.quality === quality);
+                });
+                
+                this.streamManager.setVideoQuality(quality);
+            }
+
+            selectStream(streamId) {
+                if (streamId && this.isSubscriber) {
+                    this.leaveStream().then(() => {
+                        setTimeout(() => this.joinStream(), 500);
+                    });
+                }
+            }
+
+            setConnectionStatus(status) {
+                const indicator = document.getElementById('connectionStatus');
+                const serverInfo = document.getElementById('serverInfo');
+                
+                indicator.className = 'status-indicator';
+                indicator.textContent = status.toUpperCase();
+                
+                switch (status) {
+                    case 'connected':
+                        indicator.classList.add('connected');
+                        serverInfo.textContent = 'Connected to RillNet network';
+                        break;
+                    case 'connecting':
+                        indicator.classList.add('connecting');
+                        serverInfo.textContent = 'Connecting to servers...';
+                        break;
+                    case 'error':
+                        indicator.classList.add('error');
+                        serverInfo.textContent = 'Connection failed - retrying...';
+                        break;
+                    default:
+                        serverInfo.textContent = 'Disconnected from network';
+                }
+            }
+
+            startMetricsCollection() {
+                setInterval(() => {
+                    const metrics = this.metricsCollector.collect();
+                    this.updateMetrics(metrics);
+                    
+                    this.updateVideoStats();
+                    
+                }, 2000);
+            }
+
+            updateVideoStats() {
+                const localStats = this.streamManager.getLocalStats();
+                const remoteStats = this.streamManager.getRemoteStats();
+                
+                if (localStats) {
+                    document.getElementById('localResolution').textContent = localStats.resolution;
+                    document.getElementById('localBitrate').textContent = localStats.bitrate + ' kbps';
+                    document.getElementById('localFPS').textContent = localStats.fps;
+                }
+                
+                if (remoteStats) {
+                    document.getElementById('remoteResolution').textContent = remoteStats.resolution;
+                    document.getElementById('remoteBitrate').textContent = remoteStats.bitrate + ' kbps';
+                    document.getElementById('remoteLatency').textContent = remoteStats.latency + ' ms';
+                }
+            }
+
+            updateLogFilters() {
+                const filters = {
+                    info: document.getElementById('filterInfo').checked,
+                    success: document.getElementById('filterSuccess').checked,
+                    warning: document.getElementById('filterWarning').checked,
+                    error: document.getElementById('filterError').checked
+                };
+                this.logger.setFilters(filters);
+            }
+
+            exportLog() {
+                this.logger.export();
+            }
+        }
+
+        // Initialize application
+        document.addEventListener('DOMContentLoaded', () => {
+            window.rillNetApp = new RillNetApp();
+        });
+    </script>
+</body>
+</html>
