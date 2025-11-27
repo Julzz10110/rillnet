@@ -37,3 +37,10 @@ monitoring:
 logging:
   level: "info"
   format: "json"
+
+redis:
+  enabled: false
+  address: "localhost:6379"
+  password: ""
+  db: 0
+  pool_size: 10

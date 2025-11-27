@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"rillnet/internal/core/services"
-	"rillnet/internal/infrastructure/repositories/memory"
+	repositories "rillnet/internal/infrastructure/repositories"
 	"rillnet/internal/infrastructure/signal"
 	"rillnet/pkg/config"
 	"rillnet/pkg/logger"
@@ -43,9 +43,16 @@ func main() {
 	defer zapLogger.Sync()
 	log := zapLogger.Sugar()
 
+	// Initialize repository factory
+	repoFactory, err := repositories.NewRepositoryFactory(cfg, log)
+	if err != nil {
+		log.Fatalw("failed to create repository factory", "error", err)
+	}
+	defer repoFactory.Close()
+
 	// Initialize repositories
-	peerRepo := memory.NewMemoryPeerRepository()
-	meshRepo := memory.NewMemoryMeshRepository()
+	peerRepo := repoFactory.CreatePeerRepository()
+	meshRepo := repoFactory.CreateMeshRepository()
 
 	// Initialize mesh service
 	meshService := services.NewMeshService(peerRepo, meshRepo)

@@ -51,6 +51,14 @@ type Config struct {
 		Level  string `yaml:"level"`
 		Format string `yaml:"format"`
 	} `yaml:"logging"`
+
+	Redis struct {
+		Enabled  bool   `yaml:"enabled"`
+		Address  string `yaml:"address"`
+		Password string `yaml:"password"`
+		DB       int    `yaml:"db"`
+		PoolSize int    `yaml:"pool_size"`
+	} `yaml:"redis"`
 }
 
 // Validate checks that configuration values are within acceptable ranges.
@@ -111,6 +119,16 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("logging.level must not be empty")
 	}
 
+	// Redis
+	if c.Redis.Enabled {
+		if c.Redis.Address == "" {
+			return fmt.Errorf("redis.address must not be empty when redis.enabled=true")
+		}
+		if c.Redis.PoolSize <= 0 {
+			return fmt.Errorf("redis.pool_size must be > 0 when redis.enabled=true")
+		}
+	}
+
 	return nil
 }
 
@@ -163,6 +181,11 @@ func DefaultConfig() *Config {
 
 	cfg.Logging.Level = "info"
 	cfg.Logging.Format = "json"
+
+	cfg.Redis.Enabled = false
+	cfg.Redis.Address = "localhost:6379"
+	cfg.Redis.DB = 0
+	cfg.Redis.PoolSize = 10
 
 	return cfg
 }

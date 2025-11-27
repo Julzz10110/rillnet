@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,7 +11,7 @@ import (
 	"rillnet/internal/core/services"
 	"rillnet/internal/handlers/http"
 	"rillnet/internal/infrastructure/monitoring"
-	"rillnet/internal/infrastructure/repositories/memory"
+	repositories "rillnet/internal/infrastructure/repositories"
 	webrtcinfra "rillnet/internal/infrastructure/webrtc"
 	"rillnet/pkg/config"
 	"rillnet/pkg/logger"
@@ -52,10 +53,17 @@ func main() {
 
 	log := zapLogger.Sugar()
 
+	// Initialize repository factory
+	repoFactory, err := repositories.NewRepositoryFactory(cfg, log)
+	if err != nil {
+		log.Fatalw("failed to create repository factory", "error", err)
+	}
+	defer repoFactory.Close()
+
 	// Initialize repositories
-	streamRepo := memory.NewMemoryStreamRepository()
-	peerRepo := memory.NewMemoryPeerRepository()
-	meshRepo := memory.NewMemoryMeshRepository()
+	streamRepo := repoFactory.CreateStreamRepository()
+	peerRepo := repoFactory.CreatePeerRepository()
+	meshRepo := repoFactory.CreateMeshRepository()
 
 	// Initialize services
 	qualityService := services.NewQualityService()
@@ -116,7 +124,20 @@ func main() {
 
 	// Readiness endpoint (can be extended with real dependency checks)
 	router.GET("/ready", func(c *gin.Context) {
-		// In future we can check external dependencies (Redis, DB, etc.)
+		// Check repository health (Redis connection if enabled)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+
+		if err := repoFactory.HealthCheck(ctx); err != nil {
+			c.JSON(503, gin.H{
+				"status":       "not_ready",
+				"timestamp":    time.Now(),
+				"dependencies": "unhealthy",
+				"error":        err.Error(),
+			})
+			return
+		}
+
 		c.JSON(200, gin.H{
 			"status":       "ready",
 			"timestamp":    time.Now(),
