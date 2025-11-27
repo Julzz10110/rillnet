@@ -1,8 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"time"
+
+	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
@@ -48,25 +51,116 @@ type Config struct {
 	} `yaml:"logging"`
 }
 
-func Load(configPath string) (*Config, error) {
-	// Check if the file exists
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return nil, err
+// Validate checks that configuration values are within acceptable ranges.
+func (c *Config) Validate() error {
+	// Server
+	if c.Server.Address == "" {
+		return fmt.Errorf("server.address must not be empty")
+	}
+	if c.Server.ReadTimeout <= 0 {
+		return fmt.Errorf("server.read_timeout must be > 0")
+	}
+	if c.Server.WriteTimeout <= 0 {
+		return fmt.Errorf("server.write_timeout must be > 0")
 	}
 
-	// If file exists, load it
-	// (YAML loading implementation should be here)
-	// For now, return default configuration
-	return DefaultConfig(), nil
+	// Signal
+	if c.Signal.Address == "" {
+		return fmt.Errorf("signal.address must not be empty")
+	}
+	if c.Signal.PingInterval <= 0 {
+		return fmt.Errorf("signal.ping_interval must be > 0")
+	}
+	if c.Signal.PongTimeout <= 0 {
+		return fmt.Errorf("signal.pong_timeout must be > 0")
+	}
+
+	// WebRTC
+	if c.WebRTC.PortRange.Min > 0 || c.WebRTC.PortRange.Max > 0 {
+		if c.WebRTC.PortRange.Min == 0 || c.WebRTC.PortRange.Max == 0 {
+			return fmt.Errorf("webrtc.port_range.min and max must both be set when one is set")
+		}
+		if c.WebRTC.PortRange.Min >= c.WebRTC.PortRange.Max {
+			return fmt.Errorf("webrtc.port_range.min must be < max")
+		}
+	}
+
+	// Mesh
+	if c.Mesh.MaxConnections <= 0 {
+		return fmt.Errorf("mesh.max_connections must be > 0")
+	}
+	if c.Mesh.HealthCheckInterval <= 0 {
+		return fmt.Errorf("mesh.health_check_interval must be > 0")
+	}
+	if c.Mesh.ReconnectAttempts < 0 {
+		return fmt.Errorf("mesh.reconnect_attempts must be >= 0")
+	}
+
+	// Monitoring
+	if c.Monitoring.PrometheusEnabled && c.Monitoring.PrometheusPort <= 0 {
+		return fmt.Errorf("monitoring.prometheus_port must be > 0 when prometheus_enabled=true")
+	}
+	if c.Monitoring.MetricsInterval <= 0 {
+		return fmt.Errorf("monitoring.metrics_interval must be > 0")
+	}
+
+	// Logging
+	if c.Logging.Level == "" {
+		return fmt.Errorf("logging.level must not be empty")
+	}
+
+	return nil
 }
 
+// Load reads configuration from YAML file, applies defaults and env overrides.
+func Load(configPath string) (*Config, error) {
+	// If file does not exist, fall back to defaults
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		cfg := DefaultConfig()
+		cfg.applyEnvOverrides()
+		return cfg, nil
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file %s: %w", configPath, err)
+	}
+
+	cfg := DefaultConfig()
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config yaml: %w", err)
+	}
+
+	cfg.applyEnvOverrides()
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+	return cfg, nil
+}
+
+// DefaultConfig returns configuration with sane defaults.
 func DefaultConfig() *Config {
 	cfg := &Config{}
 
 	// Default values
 	cfg.Server.Address = ":8080"
+	cfg.Server.ReadTimeout = 30 * time.Second
+	cfg.Server.WriteTimeout = 30 * time.Second
+
 	cfg.Signal.Address = ":8081"
+	cfg.Signal.PingInterval = 30 * time.Second
+	cfg.Signal.PongTimeout = 60 * time.Second
+
+	cfg.Mesh.MaxConnections = 4
+	cfg.Mesh.HealthCheckInterval = 10 * time.Second
+	cfg.Mesh.ReconnectAttempts = 3
+
+	cfg.Monitoring.PrometheusEnabled = true
+	cfg.Monitoring.PrometheusPort = 9090
+	cfg.Monitoring.MetricsInterval = 30 * time.Second
+
 	cfg.Logging.Level = "info"
+	cfg.Logging.Format = "json"
 
 	return cfg
 }

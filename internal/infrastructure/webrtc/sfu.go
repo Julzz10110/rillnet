@@ -3,15 +3,16 @@ package webrtc
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"rillnet/internal/core/domain"
 	"rillnet/internal/core/ports"
 	"rillnet/internal/core/services"
+	rlog "rillnet/pkg/logger"
 
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/zap"
 )
 
 // WebRTCConfig WebRTC configuration
@@ -36,6 +37,8 @@ type SFUService struct {
 	subscribers     map[domain.PeerID]*Subscriber
 	trackForwarders map[domain.TrackID]*TrackForwarder
 	mu              sync.RWMutex
+
+	logger *zap.SugaredLogger
 }
 
 // Publisher represents a stream publisher
@@ -84,6 +87,7 @@ func NewSFUService(
 		publishers:      make(map[domain.PeerID]*Publisher),
 		subscribers:     make(map[domain.PeerID]*Subscriber),
 		trackForwarders: make(map[domain.TrackID]*TrackForwarder),
+		logger:          rlog.New("info").Sugar(),
 	}
 }
 
@@ -270,7 +274,11 @@ func (s *SFUService) createPeerConnection() (*webrtc.PeerConnection, error) {
 // handlePublisherTrack handles incoming tracks from publisher
 func (s *SFUService) handlePublisherTrack(peerID domain.PeerID, streamID domain.StreamID) func(*webrtc.TrackRemote, *webrtc.RTPReceiver) {
 	return func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		log.Printf("Publisher %s started streaming track %s", peerID, track.ID())
+		s.logger.Infow("publisher started streaming track",
+			"peer_id", peerID,
+			"stream_id", streamID,
+			"track_id", track.ID(),
+		)
 
 		// Create forwarder for this track
 		forwarder := &TrackForwarder{
@@ -297,7 +305,10 @@ func (s *SFUService) forwardTrackToSubscribers(forwarder *TrackForwarder, track 
 		// Read RTP packet from publisher
 		_, _, err := track.Read(packetBuffer)
 		if err != nil {
-			log.Printf("Error reading track %s: %v", forwarder.TrackID, err)
+			s.logger.Warnw("error reading track",
+				"track_id", forwarder.TrackID,
+				"error", err,
+			)
 			break
 		}
 
@@ -316,7 +327,10 @@ func (s *SFUService) forwardTrackToSubscribers(forwarder *TrackForwarder, track 
 // handleICEConnectionState handles ICE connection state changes
 func (s *SFUService) handleICEConnectionState(peerID domain.PeerID) func(webrtc.ICEConnectionState) {
 	return func(state webrtc.ICEConnectionState) {
-		log.Printf("Peer %s ICE connection state: %s", peerID, state)
+		s.logger.Infow("peer ICE connection state changed",
+			"peer_id", peerID,
+			"ice_state", state,
+		)
 
 		if state == webrtc.ICEConnectionStateFailed || state == webrtc.ICEConnectionStateDisconnected {
 			s.handlePeerDisconnect(peerID)
@@ -327,7 +341,10 @@ func (s *SFUService) handleICEConnectionState(peerID domain.PeerID) func(webrtc.
 // handleConnectionState handles connection state changes
 func (s *SFUService) handleConnectionState(peerID domain.PeerID) func(webrtc.PeerConnectionState) {
 	return func(state webrtc.PeerConnectionState) {
-		log.Printf("Peer %s connection state: %s", peerID, state)
+		s.logger.Infow("peer connection state changed",
+			"peer_id", peerID,
+			"connection_state", state,
+		)
 
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateDisconnected {
 			s.handlePeerDisconnect(peerID)

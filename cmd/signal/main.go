@@ -1,16 +1,20 @@
 package main
 
 import (
-	"log"
+	"encoding/json"
 	"net/http"
+	"time"
 
 	"rillnet/internal/core/services"
 	"rillnet/internal/infrastructure/repositories/memory"
 	"rillnet/internal/infrastructure/signal"
 	"rillnet/pkg/config"
+	"rillnet/pkg/logger"
 )
 
 func main() {
+	startTime := time.Now()
+
 	// Try multiple config paths
 	configPaths := []string{
 		"configs/config.yaml",
@@ -25,18 +29,19 @@ func main() {
 	for _, path := range configPaths {
 		cfg, err = config.Load(path)
 		if err == nil {
-			log.Printf("Loaded config from: %s", path)
 			break
 		}
 	}
 
 	if err != nil {
-		log.Printf("Could not load config from any path, using defaults")
-		// Create default configuration
-		cfg = &config.Config{}
-		cfg.Signal.Address = ":8081"
-		cfg.Logging.Level = "info"
+		// Fallback to defaults if config cannot be loaded
+		cfg = config.DefaultConfig()
 	}
+
+	// Initialize logger
+	zapLogger := logger.New(cfg.Logging.Level)
+	defer zapLogger.Sync()
+	log := zapLogger.Sugar()
 
 	// Initialize repositories
 	peerRepo := memory.NewMemoryPeerRepository()
@@ -51,7 +56,17 @@ func main() {
 	// Setup HTTP routes
 	http.HandleFunc("/ws", wsServer.HandleWebSocket)
 	http.HandleFunc("/health", wsServer.HealthCheck)
+	http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":    "ready",
+			"timestamp": time.Now(),
+			"uptime":    time.Since(startTime).String(),
+		})
+	})
 
-	log.Printf("Starting RillNet Signaling server on %s", cfg.Signal.Address)
-	log.Fatal(http.ListenAndServe(cfg.Signal.Address, nil))
+	log.Infof("Starting RillNet Signaling server on %s", cfg.Signal.Address)
+	if err := http.ListenAndServe(cfg.Signal.Address, nil); err != nil {
+		log.Fatalf("Signal server failed: %v", err)
+	}
 }

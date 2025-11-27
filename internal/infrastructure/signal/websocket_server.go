@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"rillnet/internal/core/domain"
 	"rillnet/internal/core/ports"
+	rlog "rillnet/pkg/logger"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
 var upgrader = websocket.Upgrader{
@@ -29,6 +30,8 @@ type WebSocketServer struct {
 
 	connections map[domain.PeerID]*websocket.Conn
 	mu          sync.RWMutex
+
+	logger *zap.SugaredLogger
 }
 
 type SignalMessage struct {
@@ -61,13 +64,14 @@ func NewWebSocketServer(peerRepo ports.PeerRepository, meshService ports.MeshSer
 		peerRepo:    peerRepo,
 		meshService: meshService,
 		connections: make(map[domain.PeerID]*websocket.Conn),
+		logger:      rlog.New("info").Sugar(),
 	}
 }
 
 func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade failed: %v", err)
+		s.logger.Errorw("websocket upgrade failed", "error", err)
 		return
 	}
 	defer conn.Close()
@@ -75,7 +79,7 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 	// Register connection
 	peerID := domain.PeerID(r.URL.Query().Get("peer_id"))
 	if peerID == "" {
-		log.Printf("Missing peer_id in query parameters")
+		s.logger.Warn("missing peer_id in query parameters")
 		return
 	}
 
@@ -83,18 +87,18 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 	s.connections[peerID] = conn
 	s.mu.Unlock()
 
-	log.Printf("Peer %s connected via WebSocket", peerID)
+	s.logger.Infow("peer connected via WebSocket", "peer_id", peerID)
 
 	// Process messages
 	for {
 		var msg SignalMessage
 		if err := conn.ReadJSON(&msg); err != nil {
-			log.Printf("Error reading message from peer %s: %v", peerID, err)
+			s.logger.Infow("error reading message from peer", "peer_id", peerID, "error", err)
 			break
 		}
 
 		if err := s.handleMessage(context.Background(), peerID, msg); err != nil {
-			log.Printf("Error handling message from peer %s: %v", peerID, err)
+			s.logger.Infow("error handling message from peer", "peer_id", peerID, "error", err)
 			s.sendError(conn, err.Error())
 		}
 	}
@@ -105,10 +109,10 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 	s.mu.Unlock()
 
 	if err := s.meshService.RemovePeer(context.Background(), peerID); err != nil {
-		log.Printf("Error removing peer %s: %v", peerID, err)
+		s.logger.Infow("error removing peer from mesh", "peer_id", peerID, "error", err)
 	}
 
-	log.Printf("Peer %s disconnected", peerID)
+	s.logger.Infow("peer disconnected", "peer_id", peerID)
 }
 
 func (s *WebSocketServer) handleMessage(ctx context.Context, peerID domain.PeerID, msg SignalMessage) error {
@@ -172,7 +176,7 @@ func (s *WebSocketServer) handleJoinStream(ctx context.Context, peerID domain.Pe
 	sources, err := s.meshService.FindOptimalSources(ctx, payload.StreamID, peerID, 4)
 	if err != nil {
 		// If no sources found, continue anyway
-		log.Printf("No optimal sources found for peer %s: %v", peerID, err)
+		s.logger.Infow("no optimal sources found for peer", "peer_id", peerID, "error", err)
 		sources = []*domain.Peer{}
 	}
 
@@ -211,7 +215,10 @@ func (s *WebSocketServer) handleOffer(ctx context.Context, peerID domain.PeerID,
 
 	fmt.Print("Response:", response)
 
-	log.Printf("Received offer from peer %s: %s", peerID, payload.SDP[:50]+"...")
+	s.logger.Infow("received offer from peer",
+		"peer_id", peerID,
+		"sdp_preview", payload.SDP[:50]+"...",
+	)
 
 	// Target peer should be determined here and offer sent to it
 	// targetPeerID := determineTargetPeer(peerID, msg)
@@ -237,7 +244,10 @@ func (s *WebSocketServer) handleAnswer(ctx context.Context, peerID domain.PeerID
 
 	fmt.Print("Response:", response)
 
-	log.Printf("Received answer from peer %s: %s", peerID, payload.SDP[:50]+"...")
+	s.logger.Infow("received answer from peer",
+		"peer_id", peerID,
+		"sdp_preview", payload.SDP[:50]+"...",
+	)
 
 	// Target peer should be determined here and answer sent to it
 	// targetPeerID := determineTargetPeer(peerID, msg)
@@ -263,7 +273,7 @@ func (s *WebSocketServer) handleICECandidate(ctx context.Context, peerID domain.
 
 	fmt.Print("Response:", response)
 
-	log.Printf("Received ICE candidate from peer %s", peerID)
+	s.logger.Infow("received ICE candidate from peer", "peer_id", peerID)
 
 	// Target peer should be determined here and ICE candidate sent to it
 	// targetPeerID := determineTargetPeer(peerID, msg)
@@ -293,8 +303,12 @@ func (s *WebSocketServer) handleMetricsUpdate(ctx context.Context, peerID domain
 		return fmt.Errorf("failed to update peer metrics: %w", err)
 	}
 
-	log.Printf("Updated metrics for peer %s: bandwidth=%d, packet_loss=%.3f, latency=%dms",
-		peerID, payload.Bandwidth, payload.PacketLoss, payload.Latency)
+	s.logger.Infow("updated peer metrics",
+		"peer_id", peerID,
+		"bandwidth", payload.Bandwidth,
+		"packet_loss", payload.PacketLoss,
+		"latency_ms", payload.Latency,
+	)
 
 	// Send confirmation
 	response := map[string]interface{}{

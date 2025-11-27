@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,9 +17,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/pion/webrtc/v3"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
+	startTime := time.Now()
+
 	// Try multiple config paths
 	configPaths := []string{
 		"configs/config.yaml",
@@ -35,17 +37,13 @@ func main() {
 	for _, path := range configPaths {
 		cfg, err = config.Load(path)
 		if err == nil {
-			log.Printf("Loaded config from: %s", path)
 			break
 		}
 	}
 
 	if err != nil {
-		log.Printf("Could not load config from any path, using defaults")
-		// Create default configuration
-		cfg = &config.Config{}
-		cfg.Server.Address = ":8080"
-		cfg.Logging.Level = "info"
+		// Fallback to defaults if config cannot be loaded
+		cfg = config.DefaultConfig()
 	}
 
 	// Initialize logger
@@ -79,7 +77,6 @@ func main() {
 
 	// Initialize monitoring
 	prometheusCollector := monitoring.NewPrometheusCollector()
-
 	fmt.Print("Prometheus Collector:", prometheusCollector)
 
 	// Initialize HTTP handlers
@@ -96,13 +93,26 @@ func main() {
 
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "healthy", "timestamp": time.Now()})
+		c.JSON(200, gin.H{
+			"status":    "healthy",
+			"timestamp": time.Now(),
+			"uptime":    time.Since(startTime).String(),
+		})
+	})
+
+	// Readiness endpoint (can be extended with real dependency checks)
+	router.GET("/ready", func(c *gin.Context) {
+		// In future we can check external dependencies (Redis, DB, etc.)
+		c.JSON(200, gin.H{
+			"status":       "ready",
+			"timestamp":    time.Now(),
+			"dependencies": "ok",
+		})
 	})
 
 	// Prometheus metrics endpoint
 	if cfg.Monitoring.PrometheusEnabled {
-		// Prometheus handler should be added here
-		// router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+		router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 		log.Info("Prometheus metrics enabled")
 	}
 
