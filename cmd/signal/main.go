@@ -53,6 +53,14 @@ func main() {
 	// Initialize WebSocket server
 	wsServer := signal.NewWebSocketServer(peerRepo, meshService)
 
+	// Configure ping/pong intervals from config
+	if cfg.Signal.PingInterval > 0 {
+		wsServer.SetPingInterval(cfg.Signal.PingInterval)
+	}
+	if cfg.Signal.PongTimeout > 0 {
+		wsServer.SetPongTimeout(cfg.Signal.PongTimeout)
+	}
+
 	// Setup HTTP routes
 	http.HandleFunc("/ws", wsServer.HandleWebSocket)
 	http.HandleFunc("/health", wsServer.HealthCheck)
