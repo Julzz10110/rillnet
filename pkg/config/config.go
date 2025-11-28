@@ -59,6 +59,13 @@ type Config struct {
 		DB       int    `yaml:"db"`
 		PoolSize int    `yaml:"pool_size"`
 	} `yaml:"redis"`
+
+	Auth struct {
+		JWTSecret        string        `yaml:"jwt_secret"`
+		AccessTokenTTL   time.Duration `yaml:"access_token_ttl"`
+		RefreshTokenTTL  time.Duration `yaml:"refresh_token_ttl"`
+		AllowedOrigins   []string      `yaml:"allowed_origins"`
+	} `yaml:"auth"`
 }
 
 // Validate checks that configuration values are within acceptable ranges.
@@ -129,6 +136,17 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Auth
+	if c.Auth.JWTSecret == "" {
+		return fmt.Errorf("auth.jwt_secret must not be empty")
+	}
+	if c.Auth.AccessTokenTTL <= 0 {
+		return fmt.Errorf("auth.access_token_ttl must be > 0")
+	}
+	if c.Auth.RefreshTokenTTL <= 0 {
+		return fmt.Errorf("auth.refresh_token_ttl must be > 0")
+	}
+
 	return nil
 }
 
@@ -187,6 +205,11 @@ func DefaultConfig() *Config {
 	cfg.Redis.DB = 0
 	cfg.Redis.PoolSize = 10
 
+	cfg.Auth.JWTSecret = "change-me-in-production"
+	cfg.Auth.AccessTokenTTL = 15 * time.Minute
+	cfg.Auth.RefreshTokenTTL = 7 * 24 * time.Hour // 7 days
+	cfg.Auth.AllowedOrigins = []string{"*"}
+
 	return cfg
 }
 
@@ -200,5 +223,8 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if level := os.Getenv("RILLNET_LOG_LEVEL"); level != "" {
 		c.Logging.Level = level
+	}
+	if secret := os.Getenv("RILLNET_JWT_SECRET"); secret != "" {
+		c.Auth.JWTSecret = secret
 	}
 }

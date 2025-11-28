@@ -34,13 +34,23 @@ func NewStreamService(
 }
 
 func (s *streamService) CreateStream(ctx context.Context, name string, owner domain.PeerID, maxPeers int) (*domain.Stream, error) {
+	// Get user ID from context if available
+	var ownerUserID domain.UserID
+	if userIDVal := ctx.Value("user_id"); userIDVal != nil {
+		if userID, ok := userIDVal.(domain.UserID); ok {
+			ownerUserID = userID
+		}
+	}
+
 	stream := &domain.Stream{
-		ID:        domain.StreamID(generateStreamID()),
-		Name:      name,
-		Owner:     owner,
-		Active:    true,
-		CreatedAt: time.Now(),
-		MaxPeers:  maxPeers,
+		ID:          domain.StreamID(generateStreamID()),
+		Name:        name,
+		Owner:       owner,
+		OwnerUserID: ownerUserID,
+		Active:      true,
+		CreatedAt:   time.Now(),
+		MaxPeers:    maxPeers,
+		Permissions: []domain.StreamPermission{}, // Initialize empty permissions
 		QualityLevels: []domain.StreamQuality{
 			{Quality: "high", Bitrate: 2500, Width: 1280, Height: 720, Codec: "VP8"},
 			{Quality: "medium", Bitrate: 1000, Width: 854, Height: 480, Codec: "VP8"},

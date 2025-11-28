@@ -58,6 +58,7 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 		return
 	}
 
+	// User ID is already in context from AuthMiddleware
 	stream, err := h.streamService.CreateStream(c.Request.Context(), req.Name, req.Owner, req.MaxPeers)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

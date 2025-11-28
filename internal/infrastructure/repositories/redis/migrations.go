@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	schemaVersionKey = "rillnet:schema:version"
+	schemaVersionKey     = "rillnet:schema:version"
 	currentSchemaVersion = 1
 )
 
@@ -105,7 +105,7 @@ func getMigrations() []Migration {
 				// Migration 1: Initialize schema
 				// This migration ensures all required keys and structures exist
 				// Since we're using simple key-value storage, this is mainly for versioning
-				
+
 				// Create index for active streams if it doesn't exist
 				activeKey := "rillnet:stream:active"
 				exists, err := client.Exists(ctx, activeKey).Result()
@@ -131,4 +131,3 @@ func getMigrations() []Migration {
 		},
 	}
 }
-

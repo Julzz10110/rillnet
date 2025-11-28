@@ -57,8 +57,16 @@ func main() {
 	// Initialize mesh service
 	meshService := services.NewMeshService(peerRepo, meshRepo)
 
+	// Initialize auth service (stream service not needed for signal server)
+	authService := services.NewAuthService(
+		cfg.Auth.JWTSecret,
+		cfg.Auth.AccessTokenTTL,
+		cfg.Auth.RefreshTokenTTL,
+		nil, // Stream service not needed for WebSocket token validation
+	)
+
 	// Initialize WebSocket server
-	wsServer := signal.NewWebSocketServer(peerRepo, meshService)
+	wsServer := signal.NewWebSocketServer(peerRepo, meshService, authService, cfg.Auth.AllowedOrigins)
 
 	// Configure ping/pong intervals from config
 	if cfg.Signal.PingInterval > 0 {

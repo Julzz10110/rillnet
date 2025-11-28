@@ -13,10 +13,12 @@ type Stream struct {
 	ID            StreamID
 	Name          string
 	Owner         PeerID
+	OwnerUserID   UserID // User who owns the stream
 	Active        bool
 	CreatedAt     time.Time
 	MaxPeers      int
 	QualityLevels []StreamQuality
+	Permissions   []StreamPermission // User permissions for this stream
 }
 
 type StreamQuality struct {

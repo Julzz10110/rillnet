@@ -112,5 +112,3 @@ logging:
 	_, err := config.Load(path)
 	assert.Error(t, err)
 }
-
-

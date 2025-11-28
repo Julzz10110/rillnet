@@ -8,8 +8,10 @@ import (
 	"syscall"
 	"time"
 
+	"rillnet/internal/core/domain"
 	"rillnet/internal/core/services"
 	"rillnet/internal/handlers/http"
+	"rillnet/internal/infrastructure/middleware"
 	"rillnet/internal/infrastructure/monitoring"
 	repositories "rillnet/internal/infrastructure/repositories"
 	webrtcinfra "rillnet/internal/infrastructure/webrtc"
@@ -70,6 +72,12 @@ func main() {
 	metricsService := services.NewMetricsService()
 	meshService := services.NewMeshService(peerRepo, meshRepo)
 	streamService := services.NewStreamService(streamRepo, peerRepo, meshRepo, meshService, metricsService)
+	authService := services.NewAuthService(
+		cfg.Auth.JWTSecret,
+		cfg.Auth.AccessTokenTTL,
+		cfg.Auth.RefreshTokenTTL,
+		streamService,
+	)
 
 	// WebRTC configuration (including STUN/TURN from config)
 	var iceServers []webrtc.ICEServer
@@ -102,6 +110,7 @@ func main() {
 	fmt.Print("Prometheus Collector:", prometheusCollector)
 
 	// Initialize HTTP handlers
+	authHandler := http.NewAuthHandler(authService)
 	streamHandler := http.NewStreamHandler(streamService, sfuService)
 
 	// Configure Gin
@@ -110,8 +119,26 @@ func main() {
 	}
 	router := gin.Default()
 
-	// Setup routes
-	streamHandler.SetupRoutes(router)
+	// Setup auth routes (public)
+	authHandler.SetupRoutes(router)
+
+	// Setup stream routes with authentication
+	api := router.Group("/api/v1")
+	api.Use(middleware.AuthMiddleware(authService))
+	{
+		api.POST("/streams", streamHandler.CreateStream)
+		api.GET("/streams/:id", streamHandler.GetStream)
+		api.POST("/streams/:id/join", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.JoinStream)
+		api.POST("/streams/:id/leave", streamHandler.LeaveStream)
+		api.GET("/streams/:id/stats", streamHandler.GetStreamStats)
+		api.GET("/streams", streamHandler.ListStreams)
+
+		// WebRTC endpoints
+		api.POST("/streams/:id/publisher/offer", middleware.StreamPermissionMiddleware(authService, domain.RoleOwner), streamHandler.CreatePublisherOffer)
+		api.POST("/streams/:id/publisher/answer", middleware.StreamPermissionMiddleware(authService, domain.RoleOwner), streamHandler.HandlePublisherAnswer)
+		api.POST("/streams/:id/subscriber/offer", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.CreateSubscriberOffer)
+		api.POST("/streams/:id/subscriber/answer", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.HandleSubscriberAnswer)
+	}
 
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {

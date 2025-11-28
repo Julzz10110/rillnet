@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"rillnet/internal/core/domain"
+	"rillnet/internal/core/services"
 	"rillnet/internal/infrastructure/signal"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -124,11 +126,70 @@ func (m *MockMeshService) GetOptimalPath(ctx context.Context, sourcePeer, target
 	return args.Get(0).([]domain.PeerID), args.Error(1)
 }
 
+// MockAuthService for tests
+type MockAuthService struct {
+	mock.Mock
+}
+
+func (m *MockAuthService) GenerateToken(userID domain.UserID, username string) (string, error) {
+	args := m.Called(userID, username)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockAuthService) GenerateRefreshToken(userID domain.UserID) (string, error) {
+	args := m.Called(userID)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockAuthService) ValidateToken(tokenString string) (*services.Claims, error) {
+	args := m.Called(tokenString)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*services.Claims), args.Error(1)
+}
+
+func (m *MockAuthService) ValidateRefreshToken(tokenString string) (*services.Claims, error) {
+	args := m.Called(tokenString)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*services.Claims), args.Error(1)
+}
+
+func (m *MockAuthService) CheckStreamPermission(ctx context.Context, userID domain.UserID, streamID domain.StreamID, requiredRole domain.UserRole) error {
+	args := m.Called(ctx, userID, streamID, requiredRole)
+	return args.Error(0)
+}
+
+func (m *MockAuthService) GetUserFromContext(ctx context.Context) (domain.UserID, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(domain.UserID), args.Error(1)
+}
+
+// Helper function to create a test auth service that always validates tokens
+func createTestAuthService() *MockAuthService {
+	mockAuth := new(MockAuthService)
+
+	// Default behavior: always validate tokens successfully
+	mockAuth.On("ValidateToken", mock.AnythingOfType("string")).Return(&services.Claims{
+		UserID:           domain.UserID("test-user"),
+		Username:         "testuser",
+		RegisteredClaims: jwt.RegisteredClaims{},
+	}, nil)
+
+	// Default behavior: generate tokens successfully
+	mockAuth.On("GenerateToken", mock.AnythingOfType("domain.UserID"), mock.AnythingOfType("string")).Return("test-token-123", nil)
+
+	return mockAuth
+}
+
 func TestWebSocketServer_HandleJoinStream(t *testing.T) {
 	mockPeerRepo := new(MockPeerRepository)
 	mockMeshService := new(MockMeshService)
+	mockAuthService := createTestAuthService()
 
-	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService)
+	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
 
 	ctx := context.Background()
 	peerID := domain.PeerID("test-peer")
@@ -138,6 +199,7 @@ func TestWebSocketServer_HandleJoinStream(t *testing.T) {
 		// Expectations
 		mockMeshService.On("AddPeer", ctx, mock.AnythingOfType("*domain.Peer")).Return(nil)
 		mockMeshService.On("FindOptimalSources", ctx, streamID, peerID, 4).Return([]*domain.Peer{}, nil)
+		mockMeshService.On("RemovePeer", mock.Anything, peerID).Return(nil)
 
 		// Create test server
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -145,8 +207,11 @@ func TestWebSocketServer_HandleJoinStream(t *testing.T) {
 		}))
 		defer testServer.Close()
 
+		// Generate a test token
+		token, _ := mockAuthService.GenerateToken(domain.UserID("test-user"), "testuser")
+
 		// Convert http:// to ws://
-		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID)
+		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID) + "&token=" + token
 
 		// Connect to WebSocket
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -204,6 +269,7 @@ func TestWebSocketServer_HandleJoinStream(t *testing.T) {
 		// Expectations
 		mockMeshService.On("AddPeer", ctx, mock.AnythingOfType("*domain.Peer")).Return(nil)
 		mockMeshService.On("FindOptimalSources", ctx, streamID, peerID, 4).Return(sources, nil)
+		mockMeshService.On("RemovePeer", mock.Anything, peerID).Return(nil)
 
 		// Create test server
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +277,10 @@ func TestWebSocketServer_HandleJoinStream(t *testing.T) {
 		}))
 		defer testServer.Close()
 
-		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID)
+		// Generate a test token
+		token, _ := mockAuthService.GenerateToken(domain.UserID("test-user"), "testuser")
+
+		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID) + "&token=" + token
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		assert.NoError(t, err)
@@ -248,8 +317,9 @@ func TestWebSocketServer_HandleJoinStream(t *testing.T) {
 func TestWebSocketServer_HandleMetricsUpdate(t *testing.T) {
 	mockPeerRepo := new(MockPeerRepository)
 	mockMeshService := new(MockMeshService)
+	mockAuthService := createTestAuthService()
 
-	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService)
+	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
 
 	ctx := context.Background()
 	peerID := domain.PeerID("test-peer")
@@ -257,13 +327,17 @@ func TestWebSocketServer_HandleMetricsUpdate(t *testing.T) {
 	t.Run("successful metrics update", func(t *testing.T) {
 		// Expectations
 		mockMeshService.On("UpdatePeerMetrics", ctx, peerID, mock.AnythingOfType("domain.NetworkMetrics")).Return(nil)
+		mockMeshService.On("RemovePeer", mock.Anything, peerID).Return(nil)
 
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			server.HandleWebSocket(w, r)
 		}))
 		defer testServer.Close()
 
-		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID)
+		// Generate a test token
+		token, _ := mockAuthService.GenerateToken(domain.UserID("test-user"), "testuser")
+
+		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID) + "&token=" + token
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		assert.NoError(t, err)
@@ -290,12 +364,18 @@ func TestWebSocketServer_HandleMetricsUpdate(t *testing.T) {
 	})
 
 	t.Run("metrics update with invalid payload", func(t *testing.T) {
+		// Expectations for disconnection
+		mockMeshService.On("RemovePeer", mock.Anything, peerID).Return(nil)
+
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			server.HandleWebSocket(w, r)
 		}))
 		defer testServer.Close()
 
-		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID)
+		// Generate a test token
+		token, _ := mockAuthService.GenerateToken(domain.UserID("test-user"), "testuser")
+
+		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID) + "&token=" + token
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		assert.NoError(t, err)
@@ -322,18 +402,25 @@ func TestWebSocketServer_HandleMetricsUpdate(t *testing.T) {
 func TestWebSocketServer_HandleOffer(t *testing.T) {
 	mockPeerRepo := new(MockPeerRepository)
 	mockMeshService := new(MockMeshService)
+	mockAuthService := createTestAuthService()
 
-	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService)
+	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
 
 	peerID := domain.PeerID("test-peer")
 
 	t.Run("handle offer message", func(t *testing.T) {
+		// Expectations for disconnection
+		mockMeshService.On("RemovePeer", mock.Anything, peerID).Return(nil)
+
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			server.HandleWebSocket(w, r)
 		}))
 		defer testServer.Close()
 
-		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID)
+		// Generate a test token
+		token, _ := mockAuthService.GenerateToken(domain.UserID("test-user"), "testuser")
+
+		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID) + "&token=" + token
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		assert.NoError(t, err)
@@ -357,18 +444,25 @@ func TestWebSocketServer_HandleOffer(t *testing.T) {
 func TestWebSocketServer_HandleAnswer(t *testing.T) {
 	mockPeerRepo := new(MockPeerRepository)
 	mockMeshService := new(MockMeshService)
+	mockAuthService := createTestAuthService()
 
-	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService)
+	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
 
 	peerID := domain.PeerID("test-peer")
 
 	t.Run("handle answer message", func(t *testing.T) {
+		// Expectations for disconnection
+		mockMeshService.On("RemovePeer", mock.Anything, peerID).Return(nil)
+
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			server.HandleWebSocket(w, r)
 		}))
 		defer testServer.Close()
 
-		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID)
+		// Generate a test token
+		token, _ := mockAuthService.GenerateToken(domain.UserID("test-user"), "testuser")
+
+		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID) + "&token=" + token
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		assert.NoError(t, err)
@@ -391,18 +485,25 @@ func TestWebSocketServer_HandleAnswer(t *testing.T) {
 func TestWebSocketServer_HandleICECandidate(t *testing.T) {
 	mockPeerRepo := new(MockPeerRepository)
 	mockMeshService := new(MockMeshService)
+	mockAuthService := createTestAuthService()
 
-	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService)
+	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
 
 	peerID := domain.PeerID("test-peer")
 
 	t.Run("handle ICE candidate message", func(t *testing.T) {
+		// Expectations for disconnection
+		mockMeshService.On("RemovePeer", mock.Anything, peerID).Return(nil)
+
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			server.HandleWebSocket(w, r)
 		}))
 		defer testServer.Close()
 
-		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID)
+		// Generate a test token
+		token, _ := mockAuthService.GenerateToken(domain.UserID("test-user"), "testuser")
+
+		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID) + "&token=" + token
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		assert.NoError(t, err)
@@ -425,8 +526,9 @@ func TestWebSocketServer_HandleICECandidate(t *testing.T) {
 func TestWebSocketServer_HealthCheck(t *testing.T) {
 	mockPeerRepo := new(MockPeerRepository)
 	mockMeshService := new(MockMeshService)
+	mockAuthService := createTestAuthService()
 
-	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService)
+	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
 
 	t.Run("health check with no connections", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/health", nil)
@@ -461,8 +563,9 @@ func TestWebSocketServer_HealthCheck(t *testing.T) {
 func TestWebSocketServer_ConnectionManagement(t *testing.T) {
 	mockPeerRepo := new(MockPeerRepository)
 	mockMeshService := new(MockMeshService)
+	mockAuthService := createTestAuthService()
 
-	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService)
+	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
 
 	peerID := domain.PeerID("test-peer")
 
@@ -475,7 +578,10 @@ func TestWebSocketServer_ConnectionManagement(t *testing.T) {
 		}))
 		defer testServer.Close()
 
-		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID)
+		// Generate a test token
+		token, _ := mockAuthService.GenerateToken(domain.UserID("test-user"), "testuser")
+
+		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID) + "&token=" + token
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		assert.NoError(t, err)
@@ -497,17 +603,25 @@ func TestWebSocketServer_ConnectionManagement(t *testing.T) {
 	})
 
 	t.Run("multiple peer connections", func(t *testing.T) {
+		// Expectations for disconnection
+		peerIDs := []domain.PeerID{"peer-1", "peer-2", "peer-3"}
+		for _, pid := range peerIDs {
+			mockMeshService.On("RemovePeer", mock.Anything, pid).Return(nil)
+		}
+
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			server.HandleWebSocket(w, r)
 		}))
 		defer testServer.Close()
 
 		// Connect multiple peers
-		peerIDs := []domain.PeerID{"peer-1", "peer-2", "peer-3"}
 		var connections []*websocket.Conn
 
+		// Generate a test token
+		token, _ := mockAuthService.GenerateToken(domain.UserID("test-user"), "testuser")
+
 		for _, pid := range peerIDs {
-			wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(pid)
+			wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(pid) + "&token=" + token
 			conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 			assert.NoError(t, err)
 			connections = append(connections, conn)
@@ -535,8 +649,9 @@ func TestWebSocketServer_ConnectionManagement(t *testing.T) {
 func TestWebSocketServer_ErrorHandling(t *testing.T) {
 	mockPeerRepo := new(MockPeerRepository)
 	mockMeshService := new(MockMeshService)
+	mockAuthService := createTestAuthService()
 
-	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService)
+	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
 
 	t.Run("WebSocket without peer_id parameter", func(t *testing.T) {
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -559,12 +674,18 @@ func TestWebSocketServer_ErrorHandling(t *testing.T) {
 	t.Run("unknown message type", func(t *testing.T) {
 		peerID := domain.PeerID("test-peer")
 
+		// Expectations for disconnection
+		mockMeshService.On("RemovePeer", mock.Anything, peerID).Return(nil)
+
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			server.HandleWebSocket(w, r)
 		}))
 		defer testServer.Close()
 
-		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID)
+		// Generate a test token
+		token, _ := mockAuthService.GenerateToken(domain.UserID("test-user"), "testuser")
+
+		wsURL := "ws" + testServer.URL[4:] + "/ws?peer_id=" + string(peerID) + "&token=" + token
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		assert.NoError(t, err)

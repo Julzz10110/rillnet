@@ -13,21 +13,16 @@ import (
 	"rillnet/internal/core/ports"
 	rlog "rillnet/pkg/logger"
 
+	"rillnet/internal/core/services"
+
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Should be configured properly for production
-	},
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
-
 type WebSocketServer struct {
 	peerRepo    ports.PeerRepository
 	meshService ports.MeshService
+	authService services.AuthService
 
 	connections map[domain.PeerID]*websocket.Conn
 	mu          sync.RWMutex
@@ -37,7 +32,10 @@ type WebSocketServer struct {
 	readTimeout  time.Duration
 	writeTimeout time.Duration
 
+	allowedOrigins []string
+
 	logger *zap.SugaredLogger
+	upgrader websocket.Upgrader
 }
 
 type SignalMessage struct {
@@ -71,17 +69,49 @@ type MetricsUpdatePayload struct {
 	Latency    int64   `json:"latency"` // in milliseconds
 }
 
-func NewWebSocketServer(peerRepo ports.PeerRepository, meshService ports.MeshService) *WebSocketServer {
-	return &WebSocketServer{
-		peerRepo:     peerRepo,
-		meshService:  meshService,
-		connections:  make(map[domain.PeerID]*websocket.Conn),
-		pingInterval: 30 * time.Second, // Default ping interval
-		pongTimeout:  60 * time.Second, // Default pong timeout
-		readTimeout:  60 * time.Second, // Default read timeout
-		writeTimeout: 10 * time.Second, // Default write timeout
-		logger:       rlog.New("info").Sugar(),
+func NewWebSocketServer(
+	peerRepo ports.PeerRepository,
+	meshService ports.MeshService,
+	authService services.AuthService,
+	allowedOrigins []string,
+) *WebSocketServer {
+	ws := &WebSocketServer{
+		peerRepo:       peerRepo,
+		meshService:    meshService,
+		authService:    authService,
+		connections:    make(map[domain.PeerID]*websocket.Conn),
+		pingInterval:   30 * time.Second, // Default ping interval
+		pongTimeout:    60 * time.Second, // Default pong timeout
+		readTimeout:    60 * time.Second, // Default read timeout
+		writeTimeout:   10 * time.Second, // Default write timeout
+		allowedOrigins: allowedOrigins,
+		logger:         rlog.New("info").Sugar(),
 	}
+
+	// Configure upgrader with origin check
+	ws.upgrader = websocket.Upgrader{
+		CheckOrigin: ws.checkOrigin,
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+	}
+
+	return ws
+}
+
+func (s *WebSocketServer) checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if len(s.allowedOrigins) == 0 {
+		return true // No restrictions
+	}
+
+	for _, allowed := range s.allowedOrigins {
+		if allowed == "*" || allowed == origin {
+			return true
+		}
+	}
+
+	s.logger.Warnw("origin not allowed", "origin", origin)
+	return false
 }
 
 // SetPingInterval sets ping interval for WebSocket connections
@@ -95,7 +125,22 @@ func (s *WebSocketServer) SetPongTimeout(timeout time.Duration) {
 }
 
 func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	// Validate token from query parameter
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		s.logger.Warn("missing token in query parameters")
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+
+	claims, err := s.authService.ValidateToken(token)
+	if err != nil {
+		s.logger.Warnw("invalid token", "error", err)
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+		return
+	}
+
+	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.logger.Errorw("websocket upgrade failed", "error", err)
 		return
@@ -108,6 +153,9 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 		s.logger.Warn("missing peer_id in query parameters")
 		return
 	}
+
+	// Store user ID from token claims in connection context
+	s.logger.Infow("websocket connection authenticated", "peer_id", peerID, "user_id", claims.UserID)
 
 	// Check if peer is reconnecting (already exists)
 	s.mu.Lock()
