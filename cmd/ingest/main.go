@@ -119,6 +119,9 @@ func main() {
 	}
 	router := gin.Default()
 
+	// Global HTTP rate limiting (if enabled)
+	router.Use(middleware.NewHTTPRateLimitMiddleware(cfg))
+
 	// Setup auth routes (public)
 	authHandler.SetupRoutes(router)
 

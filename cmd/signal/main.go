@@ -76,6 +76,22 @@ func main() {
 		wsServer.SetPongTimeout(cfg.Signal.PongTimeout)
 	}
 
+	// Configure rate limiting for WebSocket server from config
+	if cfg.RateLimiting.Enabled {
+		if cfg.RateLimiting.WebSocket.ConnectionsPerMinute > 0 {
+			wsServer.SetConnectionRateLimit(cfg.RateLimiting.WebSocket.ConnectionsPerMinute)
+		}
+		if cfg.RateLimiting.WebSocket.MessagesPerSecond > 0 && cfg.RateLimiting.WebSocket.Burst > 0 {
+			wsServer.SetMessageRateLimit(cfg.RateLimiting.WebSocket.MessagesPerSecond, cfg.RateLimiting.WebSocket.Burst)
+		}
+		if cfg.RateLimiting.WebSocket.MaxConcurrent > 0 {
+			wsServer.SetMaxConcurrentConnections(cfg.RateLimiting.WebSocket.MaxConcurrent)
+		}
+		if cfg.RateLimiting.WebSocket.MaxMessageSizeBytes > 0 {
+			wsServer.SetMaxMessageSize(cfg.RateLimiting.WebSocket.MaxMessageSizeBytes)
+		}
+	}
+
 	// Setup HTTP routes
 	http.HandleFunc("/ws", wsServer.HandleWebSocket)
 	http.HandleFunc("/health", wsServer.HealthCheck)

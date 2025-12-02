@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"rillnet/internal/core/domain"
@@ -32,17 +33,17 @@ func (h *AuthHandler) SetupRoutes(router *gin.Engine) {
 
 type RegisterRequest struct {
 	Username string `json:"username" binding:"required,min=3,max=50"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Email    string `json:"email" binding:"required,email,max=254"`
+	Password string `json:"password" binding:"required,min=6,max=128"`
 }
 
 type LoginRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Username string `json:"username" binding:"required,max=50"`
+	Password string `json:"password" binding:"required,min=6,max=128"`
 }
 
 type RefreshTokenRequest struct {
-	RefreshToken string `json:"refresh_token" binding:"required"`
+	RefreshToken string `json:"refresh_token" binding:"required,max=2048"`
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -51,6 +52,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	req.Username = strings.TrimSpace(req.Username)
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 
 	// TODO: In production, implement proper user storage and password hashing
 	// For now, generate a user ID and create tokens
@@ -83,6 +87,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	req.Username = strings.TrimSpace(req.Username)
 
 	// TODO: In production, validate credentials against user storage
 	// For now, generate a user ID and create tokens
@@ -133,4 +139,6 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		"expires_in":   int(time.Minute * 15 / time.Second),
 	})
 }
+
+
 

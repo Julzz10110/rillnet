@@ -48,7 +48,7 @@ func (h *StreamHandler) SetupRoutes(router *gin.Engine) {
 
 func (h *StreamHandler) CreateStream(c *gin.Context) {
 	var req struct {
-		Name     string        `json:"name" binding:"required"`
+		Name     string        `json:"name" binding:"required,min=3,max=100"`
 		Owner    domain.PeerID `json:"owner" binding:"required"`
 		MaxPeers int           `json:"max_peers" binding:"min=1,max=1000"`
 	}
@@ -95,13 +95,18 @@ func (h *StreamHandler) JoinStream(c *gin.Context) {
 		PeerID       domain.PeerID `json:"peer_id" binding:"required"`
 		IsPublisher  bool          `json:"is_publisher"`
 		Capabilities struct {
-			MaxBitrate int      `json:"max_bitrate"`
+			MaxBitrate int      `json:"max_bitrate" binding:"min=0,max=10000000"`
 			Codecs     []string `json:"codecs"`
 		} `json:"capabilities"`
 	}
 
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.Capabilities.Codecs) > 20 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "too many codecs specified"})
 		return
 	}
 

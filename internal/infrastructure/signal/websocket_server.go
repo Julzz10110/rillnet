@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"rillnet/internal/core/services"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/time/rate"
 	"go.uber.org/zap"
 )
 
@@ -36,6 +38,14 @@ type WebSocketServer struct {
 
 	logger *zap.SugaredLogger
 	upgrader websocket.Upgrader
+
+	// rate limiting
+	connRateLimiter     *rate.Limiter
+	messageRateLimiters map[domain.PeerID]*rate.Limiter
+	messageRateMu       sync.Mutex
+
+	maxConcurrent int
+	maxMsgSize    int64
 }
 
 type SignalMessage struct {
@@ -86,6 +96,11 @@ func NewWebSocketServer(
 		writeTimeout:   10 * time.Second, // Default write timeout
 		allowedOrigins: allowedOrigins,
 		logger:         rlog.New("info").Sugar(),
+		// Default rate limits: can be overridden via setters from config
+		connRateLimiter:     rate.NewLimiter(rate.Every(time.Second), 5),
+		messageRateLimiters: make(map[domain.PeerID]*rate.Limiter),
+		maxConcurrent:       0,
+		maxMsgSize:          64 * 1024,
 	}
 
 	// Configure upgrader with origin check
@@ -124,7 +139,57 @@ func (s *WebSocketServer) SetPongTimeout(timeout time.Duration) {
 	s.pongTimeout = timeout
 }
 
+// SetConnectionRateLimit configures connection rate limiting (connections per minute).
+func (s *WebSocketServer) SetConnectionRateLimit(connectionsPerMinute int) {
+	if connectionsPerMinute <= 0 {
+		return
+	}
+	limit := rate.Every(time.Minute / time.Duration(connectionsPerMinute))
+	s.connRateLimiter = rate.NewLimiter(limit, connectionsPerMinute)
+}
+
+// SetMessageRateLimit configures per-peer message rate limiting.
+func (s *WebSocketServer) SetMessageRateLimit(msgPerSecond float64, burst int) {
+	if msgPerSecond <= 0 || burst <= 0 {
+		return
+	}
+	s.messageRateMu.Lock()
+	defer s.messageRateMu.Unlock()
+	for peerID := range s.messageRateLimiters {
+		s.messageRateLimiters[peerID] = rate.NewLimiter(rate.Limit(msgPerSecond), burst)
+	}
+}
+
+// SetMaxConcurrentConnections sets a hard cap on concurrent WebSocket connections.
+func (s *WebSocketServer) SetMaxConcurrentConnections(max int) {
+	if max < 0 {
+		return
+	}
+	s.maxConcurrent = max
+}
+
+// SetMaxMessageSize sets maximum WebSocket message size in bytes.
+func (s *WebSocketServer) SetMaxMessageSize(maxBytes int64) {
+	if maxBytes <= 0 {
+		return
+	}
+	s.maxMsgSize = maxBytes
+}
+
 func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Basic connection rate limiting by IP
+	if s.connRateLimiter != nil {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		if !s.connRateLimiter.Allow() {
+			s.logger.Warnw("websocket connection rate limit exceeded", "remote_addr", host)
+			http.Error(w, "too many connections", http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	// Validate token from query parameter
 	token := r.URL.Query().Get("token")
 	if token == "" {
@@ -147,6 +212,11 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 	}
 	defer conn.Close()
 
+	// Apply max message size limit
+	if s.maxMsgSize > 0 {
+		conn.SetReadLimit(s.maxMsgSize)
+	}
+
 	// Register connection
 	peerID := domain.PeerID(r.URL.Query().Get("peer_id"))
 	if peerID == "" {
@@ -159,6 +229,13 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 
 	// Check if peer is reconnecting (already exists)
 	s.mu.Lock()
+	// Global concurrent connections limit
+	if s.maxConcurrent > 0 && len(s.connections) >= s.maxConcurrent {
+		s.mu.Unlock()
+		s.logger.Warnw("websocket concurrent connection limit reached")
+		http.Error(w, "too many concurrent connections", http.StatusServiceUnavailable)
+		return
+	}
 	existingConn, isReconnect := s.connections[peerID]
 	if isReconnect && existingConn != nil {
 		// Close old connection
@@ -185,7 +262,16 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 	messageChan := make(chan SignalMessage, 10)
 	errorChan := make(chan error, 1)
 
-	// Start message reader goroutine
+	// Initialize per-peer message rate limiter
+	s.messageRateMu.Lock()
+	if _, exists := s.messageRateLimiters[peerID]; !exists {
+		// Default: 100 messages/sec with burst 200 if not configured differently
+		s.messageRateLimiters[peerID] = rate.NewLimiter(100, 200)
+	}
+	peerLimiter := s.messageRateLimiters[peerID]
+	s.messageRateMu.Unlock()
+
+	// Start message reader goroutine with rate limiting
 	go func() {
 		for {
 			var msg SignalMessage
@@ -193,6 +279,14 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 				errorChan <- err
 				return
 			}
+
+			// Per-peer message rate limiting
+			if !peerLimiter.Allow() {
+				s.logger.Infow("rate limit exceeded for peer messages", "peer_id", peerID)
+				s.sendError(conn, "message rate limit exceeded")
+				continue
+			}
+
 			conn.SetReadDeadline(time.Now().Add(s.readTimeout))
 			messageChan <- msg
 		}
@@ -488,6 +582,20 @@ func (s *WebSocketServer) handleMetricsUpdate(ctx context.Context, peerID domain
 		return err
 	}
 
+	// Basic validation and clamping for metrics
+	if payload.Bandwidth < 0 {
+		return fmt.Errorf("bandwidth must be >= 0")
+	}
+	if payload.Bandwidth > 100000000 { // 100 Mbps upper bound for safety
+		return fmt.Errorf("bandwidth value too large")
+	}
+	if payload.PacketLoss < 0 || payload.PacketLoss > 1 {
+		return fmt.Errorf("packet_loss must be between 0 and 1")
+	}
+	if payload.Latency < 0 {
+		return fmt.Errorf("latency must be >= 0")
+	}
+
 	// Update peer metrics
 	metrics := domain.NetworkMetrics{
 		Timestamp:        time.Now(),
@@ -523,6 +631,11 @@ func (s *WebSocketServer) handleMetricsUpdate(ctx context.Context, peerID domain
 func (s *WebSocketServer) validateSDP(sdp string) error {
 	if sdp == "" {
 		return fmt.Errorf("SDP cannot be empty")
+	}
+
+	// Protect against excessively large SDP blobs
+	if len(sdp) > 512*1024 {
+		return fmt.Errorf("SDP too large")
 	}
 
 	// Basic SDP format validation

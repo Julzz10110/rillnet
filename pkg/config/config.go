@@ -66,6 +66,24 @@ type Config struct {
 		RefreshTokenTTL  time.Duration `yaml:"refresh_token_ttl"`
 		AllowedOrigins   []string      `yaml:"allowed_origins"`
 	} `yaml:"auth"`
+
+	RateLimiting struct {
+		Enabled bool `yaml:"enabled"`
+
+		HTTP struct {
+			RequestsPerSecond   float64 `yaml:"requests_per_second"`
+			Burst               int     `yaml:"burst"`
+			MaxConcurrent       int     `yaml:"max_concurrent"` // global concurrent HTTP requests
+		} `yaml:"http"`
+
+		WebSocket struct {
+			ConnectionsPerMinute   int     `yaml:"connections_per_minute"`
+			MessagesPerSecond      float64 `yaml:"messages_per_second"`
+			Burst                  int     `yaml:"burst"`
+			MaxConcurrent          int     `yaml:"max_concurrent_connections"`
+			MaxMessageSizeBytes    int64   `yaml:"max_message_size_bytes"`
+		} `yaml:"websocket"`
+	} `yaml:"rate_limiting"`
 }
 
 // Validate checks that configuration values are within acceptable ranges.
@@ -147,6 +165,34 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("auth.refresh_token_ttl must be > 0")
 	}
 
+	// Rate limiting
+	if c.RateLimiting.Enabled {
+		if c.RateLimiting.HTTP.RequestsPerSecond <= 0 {
+			return fmt.Errorf("rate_limiting.http.requests_per_second must be > 0 when rate limiting is enabled")
+		}
+		if c.RateLimiting.HTTP.Burst <= 0 {
+			return fmt.Errorf("rate_limiting.http.burst must be > 0 when rate limiting is enabled")
+		}
+		if c.RateLimiting.HTTP.MaxConcurrent < 0 {
+			return fmt.Errorf("rate_limiting.http.max_concurrent must be >= 0 when rate limiting is enabled")
+		}
+		if c.RateLimiting.WebSocket.ConnectionsPerMinute <= 0 {
+			return fmt.Errorf("rate_limiting.websocket.connections_per_minute must be > 0 when rate limiting is enabled")
+		}
+		if c.RateLimiting.WebSocket.MessagesPerSecond <= 0 {
+			return fmt.Errorf("rate_limiting.websocket.messages_per_second must be > 0 when rate limiting is enabled")
+		}
+		if c.RateLimiting.WebSocket.Burst <= 0 {
+			return fmt.Errorf("rate_limiting.websocket.burst must be > 0 when rate limiting is enabled")
+		}
+		if c.RateLimiting.WebSocket.MaxConcurrent < 0 {
+			return fmt.Errorf("rate_limiting.websocket.max_concurrent_connections must be >= 0 when rate limiting is enabled")
+		}
+		if c.RateLimiting.WebSocket.MaxMessageSizeBytes < 0 {
+			return fmt.Errorf("rate_limiting.websocket.max_message_size_bytes must be >= 0 when rate limiting is enabled")
+		}
+	}
+
 	return nil
 }
 
@@ -209,6 +255,17 @@ func DefaultConfig() *Config {
 	cfg.Auth.AccessTokenTTL = 15 * time.Minute
 	cfg.Auth.RefreshTokenTTL = 7 * 24 * time.Hour // 7 days
 	cfg.Auth.AllowedOrigins = []string{"*"}
+
+	// Rate limiting defaults (disabled by default)
+	cfg.RateLimiting.Enabled = false
+	cfg.RateLimiting.HTTP.RequestsPerSecond = 50
+	cfg.RateLimiting.HTTP.Burst = 100
+	cfg.RateLimiting.HTTP.MaxConcurrent = 0
+	cfg.RateLimiting.WebSocket.ConnectionsPerMinute = 60
+	cfg.RateLimiting.WebSocket.MessagesPerSecond = 100
+	cfg.RateLimiting.WebSocket.Burst = 200
+	cfg.RateLimiting.WebSocket.MaxConcurrent = 0
+	cfg.RateLimiting.WebSocket.MaxMessageSizeBytes = 64 * 1024
 
 	return cfg
 }

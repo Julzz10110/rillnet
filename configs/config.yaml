@@ -51,3 +51,16 @@ auth:
   refresh_token_ttl: 168h  # 7 days
   allowed_origins:
     - "*"  # In production, specify actual origins
+
+rate_limiting:
+  enabled: true
+  http:
+    requests_per_second: 50
+    burst: 100
+    max_concurrent: 0    # 0 = no global concurrent limit
+  websocket:
+    connections_per_minute: 60
+    messages_per_second: 100
+    burst: 200
+    max_concurrent_connections: 0   # 0 = no global concurrent limit
+    max_message_size_bytes: 65536   # 64KB
