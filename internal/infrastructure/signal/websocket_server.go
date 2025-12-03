@@ -46,6 +46,10 @@ type WebSocketServer struct {
 
 	maxConcurrent int
 	maxMsgSize    int64
+
+	// graceful shutdown
+	shuttingDown bool
+	shutdownMu   sync.RWMutex
 }
 
 type SignalMessage struct {
@@ -177,6 +181,15 @@ func (s *WebSocketServer) SetMaxMessageSize(maxBytes int64) {
 }
 
 func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Check if server is shutting down
+	s.shutdownMu.RLock()
+	if s.shuttingDown {
+		s.shutdownMu.RUnlock()
+		http.Error(w, "server is shutting down", http.StatusServiceUnavailable)
+		return
+	}
+	s.shutdownMu.RUnlock()
+
 	// Basic connection rate limiting by IP
 	if s.connRateLimiter != nil {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -806,6 +819,68 @@ func (s *WebSocketServer) IsPeerConnected(peerID domain.PeerID) bool {
 
 	_, exists := s.connections[peerID]
 	return exists
+}
+
+// Shutdown gracefully closes all WebSocket connections
+func (s *WebSocketServer) Shutdown(ctx context.Context) error {
+	s.shutdownMu.Lock()
+	s.shuttingDown = true
+	s.shutdownMu.Unlock()
+
+	s.logger.Info("shutting down WebSocket server, closing all connections")
+
+	// Collect all connections
+	s.mu.Lock()
+	connections := make(map[domain.PeerID]*websocket.Conn, len(s.connections))
+	for peerID, conn := range s.connections {
+		connections[peerID] = conn
+	}
+	s.mu.Unlock()
+
+	// Close all connections gracefully
+	done := make(chan struct{})
+	go func() {
+		for peerID, conn := range connections {
+			// Send close message
+			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"))
+
+			// Close connection
+			_ = conn.Close()
+
+			// Remove from mesh
+			if err := s.meshService.RemovePeer(ctx, peerID); err != nil {
+				s.logger.Warnw("error removing peer from mesh during shutdown", "peer_id", peerID, "error", err)
+			}
+
+			s.logger.Infow("closed WebSocket connection", "peer_id", peerID)
+		}
+		close(done)
+	}()
+
+	// Wait for all connections to close or context timeout
+	select {
+	case <-done:
+		s.logger.Info("all WebSocket connections closed")
+	case <-ctx.Done():
+		s.logger.Warn("shutdown timeout exceeded, forcing connection closure")
+		// Force close remaining connections
+		s.mu.Lock()
+		for peerID, conn := range s.connections {
+			_ = conn.Close()
+			s.logger.Infow("force closed WebSocket connection", "peer_id", peerID)
+		}
+		s.connections = make(map[domain.PeerID]*websocket.Conn)
+		s.mu.Unlock()
+		return ctx.Err()
+	}
+
+	// Clear connections map
+	s.mu.Lock()
+	s.connections = make(map[domain.PeerID]*websocket.Conn)
+	s.mu.Unlock()
+
+	return nil
 }
 
 func generateSessionID() string {

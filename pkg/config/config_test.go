@@ -40,8 +40,8 @@ func TestValidate_RateLimitingDisabled_AllowsZeroValues(t *testing.T) {
 
 func TestValidate_RateLimiting_InvalidValues(t *testing.T) {
 	cases := []struct {
-		name    string
-		mutate  func(*Config)
+		name   string
+		mutate func(*Config)
 	}{
 		{
 			name: "http rps must be > 0",
@@ -109,5 +109,3 @@ func TestValidate_RateLimiting_InvalidValues(t *testing.T) {
 		})
 	}
 }
-
-

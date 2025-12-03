@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,7 +11,7 @@ import (
 
 	"rillnet/internal/core/domain"
 	"rillnet/internal/core/services"
-	"rillnet/internal/handlers/http"
+	httphandlers "rillnet/internal/handlers/http"
 	"rillnet/internal/infrastructure/middleware"
 	"rillnet/internal/infrastructure/monitoring"
 	repositories "rillnet/internal/infrastructure/repositories"
@@ -110,8 +111,8 @@ func main() {
 	fmt.Print("Prometheus Collector:", prometheusCollector)
 
 	// Initialize HTTP handlers
-	authHandler := http.NewAuthHandler(authService)
-	streamHandler := http.NewStreamHandler(streamService, sfuService)
+	authHandler := httphandlers.NewAuthHandler(authService)
+	streamHandler := httphandlers.NewStreamHandler(streamService, sfuService)
 
 	// Configure Gin
 	if cfg.Logging.Level != "debug" {
@@ -181,18 +182,55 @@ func main() {
 		log.Info("Prometheus metrics enabled")
 	}
 
-	// Start server
+	// Create HTTP server with timeouts
+	srv := &http.Server{
+		Addr:         cfg.Server.Address,
+		Handler:      router,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+	}
+
+	// Start server in goroutine
+	serverErr := make(chan error, 1)
 	go func() {
 		log.Infof("Starting RillNet Ingest server on %s", cfg.Server.Address)
-		if err := router.Run(cfg.Server.Address); err != nil {
-			log.Fatal("Server failed:", err)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
 		}
 	}()
 
-	// Wait for shutdown signals
+	// Wait for shutdown signals or server error
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
+
+	select {
+	case err := <-serverErr:
+		log.Fatalw("Server failed", "error", err)
+	case sig := <-sigChan:
+		log.Infow("Received shutdown signal", "signal", sig)
+	}
 
 	log.Info("Shutting down RillNet Ingest server...")
+
+	// Create shutdown context with timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+	defer shutdownCancel()
+
+	// Shutdown HTTP server gracefully
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Errorw("Error during server shutdown", "error", err)
+		// Force close if graceful shutdown fails
+		if closeErr := srv.Close(); closeErr != nil {
+			log.Errorw("Error force closing server", "error", closeErr)
+		}
+	} else {
+		log.Info("Server shutdown gracefully")
+	}
+
+	// Close repository factory
+	if err := repoFactory.Close(); err != nil {
+		log.Errorw("Error closing repository factory", "error", err)
+	}
+
+	log.Info("RillNet Ingest server stopped")
 }

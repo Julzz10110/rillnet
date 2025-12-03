@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	osignal "os/signal"
+	"syscall"
 	"time"
 
 	"rillnet/internal/core/services"
 	repositories "rillnet/internal/infrastructure/repositories"
-	"rillnet/internal/infrastructure/signal"
+	signalserver "rillnet/internal/infrastructure/signal"
 	"rillnet/pkg/config"
 	"rillnet/pkg/logger"
 )
@@ -66,7 +70,7 @@ func main() {
 	)
 
 	// Initialize WebSocket server
-	wsServer := signal.NewWebSocketServer(peerRepo, meshService, authService, cfg.Auth.AllowedOrigins)
+	wsServer := signalserver.NewWebSocketServer(peerRepo, meshService, authService, cfg.Auth.AllowedOrigins)
 
 	// Configure ping/pong intervals from config
 	if cfg.Signal.PingInterval > 0 {
@@ -93,9 +97,10 @@ func main() {
 	}
 
 	// Setup HTTP routes
-	http.HandleFunc("/ws", wsServer.HandleWebSocket)
-	http.HandleFunc("/health", wsServer.HealthCheck)
-	http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", wsServer.HandleWebSocket)
+	mux.HandleFunc("/health", wsServer.HealthCheck)
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":    "ready",
@@ -104,8 +109,58 @@ func main() {
 		})
 	})
 
-	log.Infof("Starting RillNet Signaling server on %s", cfg.Signal.Address)
-	if err := http.ListenAndServe(cfg.Signal.Address, nil); err != nil {
-		log.Fatalf("Signal server failed: %v", err)
+	// Create HTTP server
+	srv := &http.Server{
+		Addr:    cfg.Signal.Address,
+		Handler: mux,
 	}
+
+	// Start server in goroutine
+	serverErr := make(chan error, 1)
+	go func() {
+		log.Infof("Starting RillNet Signaling server on %s", cfg.Signal.Address)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+	}()
+
+	// Wait for shutdown signals or server error
+	sigChan := make(chan os.Signal, 1)
+	osignal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case err := <-serverErr:
+		log.Fatalw("Signal server failed", "error", err)
+	case sig := <-sigChan:
+		log.Infow("Received shutdown signal", "signal", sig)
+	}
+
+	log.Info("Shutting down RillNet Signaling server...")
+
+	// Create shutdown context with timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Signal.ShutdownTimeout)
+	defer shutdownCancel()
+
+	// Shutdown WebSocket server gracefully (close all connections)
+	if err := wsServer.Shutdown(shutdownCtx); err != nil {
+		log.Errorw("Error during WebSocket server shutdown", "error", err)
+	}
+
+	// Shutdown HTTP server gracefully
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Errorw("Error during HTTP server shutdown", "error", err)
+		// Force close if graceful shutdown fails
+		if closeErr := srv.Close(); closeErr != nil {
+			log.Errorw("Error force closing server", "error", closeErr)
+		}
+	} else {
+		log.Info("HTTP server shutdown gracefully")
+	}
+
+	// Close repository factory
+	if err := repoFactory.Close(); err != nil {
+		log.Errorw("Error closing repository factory", "error", err)
+	}
+
+	log.Info("RillNet Signaling server stopped")
 }

@@ -10,15 +10,17 @@ import (
 
 type Config struct {
 	Server struct {
-		Address      string        `yaml:"address"`
-		ReadTimeout  time.Duration `yaml:"read_timeout"`
-		WriteTimeout time.Duration `yaml:"write_timeout"`
+		Address         string        `yaml:"address"`
+		ReadTimeout     time.Duration `yaml:"read_timeout"`
+		WriteTimeout    time.Duration `yaml:"write_timeout"`
+		ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
 	} `yaml:"server"`
 
 	Signal struct {
-		Address      string        `yaml:"address"`
-		PingInterval time.Duration `yaml:"ping_interval"`
-		PongTimeout  time.Duration `yaml:"pong_timeout"`
+		Address         string        `yaml:"address"`
+		PingInterval    time.Duration `yaml:"ping_interval"`
+		PongTimeout     time.Duration `yaml:"pong_timeout"`
+		ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
 	} `yaml:"signal"`
 
 	WebRTC struct {
@@ -98,6 +100,9 @@ func (c *Config) Validate() error {
 	if c.Server.WriteTimeout <= 0 {
 		return fmt.Errorf("server.write_timeout must be > 0")
 	}
+	if c.Server.ShutdownTimeout <= 0 {
+		return fmt.Errorf("server.shutdown_timeout must be > 0")
+	}
 
 	// Signal
 	if c.Signal.Address == "" {
@@ -108,6 +113,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Signal.PongTimeout <= 0 {
 		return fmt.Errorf("signal.pong_timeout must be > 0")
+	}
+	if c.Signal.ShutdownTimeout <= 0 {
+		return fmt.Errorf("signal.shutdown_timeout must be > 0")
 	}
 
 	// WebRTC
@@ -230,10 +238,12 @@ func DefaultConfig() *Config {
 	cfg.Server.Address = ":8080"
 	cfg.Server.ReadTimeout = 30 * time.Second
 	cfg.Server.WriteTimeout = 30 * time.Second
+	cfg.Server.ShutdownTimeout = 30 * time.Second
 
 	cfg.Signal.Address = ":8081"
 	cfg.Signal.PingInterval = 30 * time.Second
 	cfg.Signal.PongTimeout = 60 * time.Second
+	cfg.Signal.ShutdownTimeout = 30 * time.Second
 
 	cfg.Mesh.MaxConnections = 4
 	cfg.Mesh.HealthCheckInterval = 10 * time.Second
