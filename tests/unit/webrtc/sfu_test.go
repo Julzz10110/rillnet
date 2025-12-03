@@ -10,6 +10,8 @@ import (
 	"rillnet/internal/core/ports"
 	"rillnet/internal/core/services"
 	webRTC "rillnet/internal/infrastructure/webrtc"
+	"rillnet/pkg/circuitbreaker"
+	"rillnet/pkg/retry"
 
 	webrtc "github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/assert"
@@ -140,7 +142,22 @@ func createTestSFUService(
 	metricsService *services.MetricsService, // Use correct type - pointer to struct
 	meshService ports.MeshService,
 ) ports.WebRTCService {
-	return webRTC.NewSFUService(config, qualityService, metricsService, meshService)
+	// Use default retry and circuit breaker configs for tests (disabled by default)
+	retryCfg := retry.Config{
+		Enabled:      false, // Disable retry in tests for predictable behavior
+		MaxAttempts:  3,
+		InitialDelay: 100 * time.Millisecond,
+		MaxDelay:     5 * time.Second,
+		Multiplier:   2.0,
+		Jitter:       false,
+	}
+	cbCfg := circuitbreaker.Config{
+		FailureThreshold:    5,
+		SuccessThreshold:    2,
+		Timeout:             30 * time.Second,
+		MaxRequestsHalfOpen: 3,
+	}
+	return webRTC.NewSFUService(config, qualityService, metricsService, meshService, retryCfg, cbCfg)
 }
 
 // TestMetricsServiceWrapper wraps MockMetricsService for use in tests

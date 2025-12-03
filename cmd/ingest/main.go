@@ -10,14 +10,18 @@ import (
 	"time"
 
 	"rillnet/internal/core/domain"
+	"rillnet/internal/core/ports"
 	"rillnet/internal/core/services"
 	httphandlers "rillnet/internal/handlers/http"
 	"rillnet/internal/infrastructure/middleware"
 	"rillnet/internal/infrastructure/monitoring"
+	reliability "rillnet/internal/infrastructure/reliability"
 	repositories "rillnet/internal/infrastructure/repositories"
 	webrtcinfra "rillnet/internal/infrastructure/webrtc"
+	"rillnet/pkg/circuitbreaker"
 	"rillnet/pkg/config"
 	"rillnet/pkg/logger"
+	"rillnet/pkg/retry"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pion/webrtc/v3"
@@ -71,7 +75,30 @@ func main() {
 	// Initialize services
 	qualityService := services.NewQualityService()
 	metricsService := services.NewMetricsService()
-	meshService := services.NewMeshService(peerRepo, meshRepo)
+	baseMeshService := services.NewMeshService(peerRepo, meshRepo)
+
+	// Wrap mesh service with retry and circuit breaker if enabled
+	var meshService ports.MeshService
+	if cfg.Retry.Enabled || cfg.CircuitBreaker.Enabled {
+		retryCfg := retry.Config{
+			Enabled:      cfg.Retry.Enabled,
+			MaxAttempts:  cfg.Retry.MaxAttempts,
+			InitialDelay: cfg.Retry.InitialDelay,
+			MaxDelay:     cfg.Retry.MaxDelay,
+			Multiplier:   cfg.Retry.Multiplier,
+			Jitter:       cfg.Retry.Jitter,
+		}
+		cbCfg := circuitbreaker.Config{
+			FailureThreshold:   cfg.CircuitBreaker.FailureThreshold,
+			SuccessThreshold:   cfg.CircuitBreaker.SuccessThreshold,
+			Timeout:            cfg.CircuitBreaker.Timeout,
+			MaxRequestsHalfOpen: cfg.CircuitBreaker.MaxRequestsHalfOpen,
+		}
+		meshService = reliability.NewMeshServiceWrapper(baseMeshService, retryCfg, cbCfg, log)
+	} else {
+		meshService = baseMeshService
+	}
+
 	streamService := services.NewStreamService(streamRepo, peerRepo, meshRepo, meshService, metricsService)
 	authService := services.NewAuthService(
 		cfg.Auth.JWTSecret,
@@ -103,8 +130,24 @@ func main() {
 		MaxBitrate: cfg.WebRTC.MaxBitrate,
 	}
 
+	// Configure retry and circuit breaker for SFU
+	retryCfg := retry.Config{
+		Enabled:      cfg.Retry.Enabled,
+		MaxAttempts:  cfg.Retry.MaxAttempts,
+		InitialDelay: cfg.Retry.InitialDelay,
+		MaxDelay:     cfg.Retry.MaxDelay,
+		Multiplier:   cfg.Retry.Multiplier,
+		Jitter:       cfg.Retry.Jitter,
+	}
+	cbCfg := circuitbreaker.Config{
+		FailureThreshold:   cfg.CircuitBreaker.FailureThreshold,
+		SuccessThreshold:   cfg.CircuitBreaker.SuccessThreshold,
+		Timeout:            cfg.CircuitBreaker.Timeout,
+		MaxRequestsHalfOpen: cfg.CircuitBreaker.MaxRequestsHalfOpen,
+	}
+
 	// Initialize SFU
-	sfuService := webrtcinfra.NewSFUService(webrtcConfig, qualityService, metricsService, meshService)
+	sfuService := webrtcinfra.NewSFUService(webrtcConfig, qualityService, metricsService, meshService, retryCfg, cbCfg)
 
 	// Initialize monitoring
 	prometheusCollector := monitoring.NewPrometheusCollector()

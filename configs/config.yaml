@@ -66,3 +66,18 @@ rate_limiting:
     burst: 200
     max_concurrent_connections: 0   # 0 = no global concurrent limit
     max_message_size_bytes: 65536   # 64KB
+
+retry:
+  enabled: true
+  max_attempts: 3
+  initial_delay: 100ms
+  max_delay: 5s
+  multiplier: 2.0
+  jitter: true
+
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  success_threshold: 2
+  timeout: 30s
+  max_requests_half_open: 3

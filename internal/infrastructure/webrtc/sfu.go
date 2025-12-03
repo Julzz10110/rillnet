@@ -9,6 +9,8 @@ import (
 	"rillnet/internal/core/domain"
 	"rillnet/internal/core/ports"
 	"rillnet/internal/core/services"
+	"rillnet/pkg/circuitbreaker"
+	"rillnet/pkg/retry"
 	rlog "rillnet/pkg/logger"
 
 	"github.com/pion/rtcp"
@@ -41,6 +43,12 @@ type SFUService struct {
 	mu              sync.RWMutex
 
 	logger *zap.SugaredLogger
+
+	// Reliability features
+	retryConfig     retry.Config
+	circuitBreaker  *circuitbreaker.CircuitBreaker
+	peerBreakers    map[domain.PeerID]*circuitbreaker.CircuitBreaker
+	peerBreakersMu  sync.RWMutex
 }
 
 // Publisher represents a stream publisher
@@ -80,8 +88,10 @@ func NewSFUService(
 	qualityService *services.QualityService,
 	metricsService *services.MetricsService,
 	meshService ports.MeshService,
+	retryConfig retry.Config,
+	cbConfig circuitbreaker.Config,
 ) ports.WebRTCService {
-	return &SFUService{
+	sfu := &SFUService{
 		config:          config,
 		qualityService:  qualityService,
 		metricsService:  metricsService,
@@ -90,11 +100,74 @@ func NewSFUService(
 		subscribers:     make(map[domain.PeerID]*Subscriber),
 		trackForwarders: make(map[domain.TrackID]*TrackForwarder),
 		logger:          rlog.New("info").Sugar(),
+		retryConfig:     retryConfig,
+		circuitBreaker:  circuitbreaker.New(cbConfig),
+		peerBreakers:    make(map[domain.PeerID]*circuitbreaker.CircuitBreaker),
 	}
+
+	// Set up state change callback
+	sfu.circuitBreaker.OnStateChange(func(from, to circuitbreaker.State) {
+		sfu.logger.Infow("SFU circuit breaker state changed",
+			"from", from.String(),
+			"to", to.String(),
+		)
+	})
+
+	return sfu
+}
+
+// getPeerCircuitBreaker gets or creates a circuit breaker for a specific peer
+func (s *SFUService) getPeerCircuitBreaker(peerID domain.PeerID) *circuitbreaker.CircuitBreaker {
+	s.peerBreakersMu.RLock()
+	cb, exists := s.peerBreakers[peerID]
+	s.peerBreakersMu.RUnlock()
+
+	if exists {
+		return cb
+	}
+
+	// Create new circuit breaker for this peer
+	s.peerBreakersMu.Lock()
+	defer s.peerBreakersMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if cb, exists := s.peerBreakers[peerID]; exists {
+		return cb
+	}
+
+	cb = circuitbreaker.New(circuitbreaker.DefaultConfig())
+	cb.OnStateChange(func(from, to circuitbreaker.State) {
+		s.logger.Infow("peer circuit breaker state changed",
+			"peer_id", peerID,
+			"from", from.String(),
+			"to", to.String(),
+		)
+	})
+
+	s.peerBreakers[peerID] = cb
+	return cb
 }
 
 // CreatePublisherOffer creates an offer for publisher
 func (s *SFUService) CreatePublisherOffer(ctx context.Context, peerID domain.PeerID, streamID domain.StreamID) (webrtc.SessionDescription, error) {
+	if s.retryConfig.Enabled {
+		result, err := retry.RetryWithResult(ctx, s.retryConfig, func() (webrtc.SessionDescription, error) {
+			res, err := s.circuitBreaker.ExecuteWithResult(ctx, func() (interface{}, error) {
+				return s.createPublisherOfferInternal(ctx, peerID, streamID)
+			})
+			if err != nil {
+				return webrtc.SessionDescription{}, err
+			}
+			return res.(webrtc.SessionDescription), nil
+		})
+		return result, err
+	}
+
+	return s.createPublisherOfferInternal(ctx, peerID, streamID)
+}
+
+// createPublisherOfferInternal is the internal implementation without retry/circuit breaker
+func (s *SFUService) createPublisherOfferInternal(ctx context.Context, peerID domain.PeerID, streamID domain.StreamID) (webrtc.SessionDescription, error) {
 	pc, err := s.createPeerConnection()
 	if err != nil {
 		return webrtc.SessionDescription{}, fmt.Errorf("failed to create peer connection: %w", err)
@@ -185,6 +258,26 @@ func (s *SFUService) HandlePublisherAnswer(ctx context.Context, peerID domain.Pe
 
 // CreateSubscriberOffer creates an offer for subscriber
 func (s *SFUService) CreateSubscriberOffer(ctx context.Context, peerID domain.PeerID, streamID domain.StreamID, sourcePeers []domain.PeerID) (webrtc.SessionDescription, error) {
+	if s.retryConfig.Enabled {
+		result, err := retry.RetryWithResult(ctx, s.retryConfig, func() (webrtc.SessionDescription, error) {
+			// Use per-peer circuit breaker for subscriber connections
+			peerCB := s.getPeerCircuitBreaker(peerID)
+			res, err := peerCB.ExecuteWithResult(ctx, func() (interface{}, error) {
+				return s.createSubscriberOfferInternal(ctx, peerID, streamID, sourcePeers)
+			})
+			if err != nil {
+				return webrtc.SessionDescription{}, err
+			}
+			return res.(webrtc.SessionDescription), nil
+		})
+		return result, err
+	}
+
+	return s.createSubscriberOfferInternal(ctx, peerID, streamID, sourcePeers)
+}
+
+// createSubscriberOfferInternal is the internal implementation without retry/circuit breaker
+func (s *SFUService) createSubscriberOfferInternal(ctx context.Context, peerID domain.PeerID, streamID domain.StreamID, sourcePeers []domain.PeerID) (webrtc.SessionDescription, error) {
 	pc, err := s.createPeerConnection()
 	if err != nil {
 		return webrtc.SessionDescription{}, err
@@ -256,6 +349,20 @@ func (s *SFUService) CreateSubscriberOffer(ctx context.Context, peerID domain.Pe
 
 // HandleSubscriberAnswer handles answer from subscriber
 func (s *SFUService) HandleSubscriberAnswer(ctx context.Context, peerID domain.PeerID, answer webrtc.SessionDescription) error {
+	if s.retryConfig.Enabled {
+		return retry.Retry(ctx, s.retryConfig, func() error {
+			peerCB := s.getPeerCircuitBreaker(peerID)
+			return peerCB.Execute(ctx, func() error {
+				return s.handleSubscriberAnswerInternal(ctx, peerID, answer)
+			})
+		})
+	}
+
+	return s.handleSubscriberAnswerInternal(ctx, peerID, answer)
+}
+
+// handleSubscriberAnswerInternal is the internal implementation without retry/circuit breaker
+func (s *SFUService) handleSubscriberAnswerInternal(ctx context.Context, peerID domain.PeerID, answer webrtc.SessionDescription) error {
 	s.mu.RLock()
 	subscriber, exists := s.subscribers[peerID]
 	s.mu.RUnlock()

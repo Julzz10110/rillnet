@@ -86,6 +86,23 @@ type Config struct {
 			MaxMessageSizeBytes    int64   `yaml:"max_message_size_bytes"`
 		} `yaml:"websocket"`
 	} `yaml:"rate_limiting"`
+
+	Retry struct {
+		Enabled       bool          `yaml:"enabled"`
+		MaxAttempts    int           `yaml:"max_attempts"`
+		InitialDelay   time.Duration `yaml:"initial_delay"`
+		MaxDelay       time.Duration `yaml:"max_delay"`
+		Multiplier     float64       `yaml:"multiplier"`
+		Jitter         bool          `yaml:"jitter"`
+	} `yaml:"retry"`
+
+	CircuitBreaker struct {
+		Enabled            bool          `yaml:"enabled"`
+		FailureThreshold   int           `yaml:"failure_threshold"`
+		SuccessThreshold   int           `yaml:"success_threshold"`
+		Timeout            time.Duration `yaml:"timeout"`
+		MaxRequestsHalfOpen int          `yaml:"max_requests_half_open"`
+	} `yaml:"circuit_breaker"`
 }
 
 // Validate checks that configuration values are within acceptable ranges.
@@ -196,8 +213,43 @@ func (c *Config) Validate() error {
 		if c.RateLimiting.WebSocket.MaxConcurrent < 0 {
 			return fmt.Errorf("rate_limiting.websocket.max_concurrent_connections must be >= 0 when rate limiting is enabled")
 		}
-		if c.RateLimiting.WebSocket.MaxMessageSizeBytes < 0 {
-			return fmt.Errorf("rate_limiting.websocket.max_message_size_bytes must be >= 0 when rate limiting is enabled")
+			if c.RateLimiting.WebSocket.MaxMessageSizeBytes < 0 {
+				return fmt.Errorf("rate_limiting.websocket.max_message_size_bytes must be >= 0 when rate limiting is enabled")
+			}
+		}
+
+	// Retry
+	if c.Retry.Enabled {
+		if c.Retry.MaxAttempts <= 0 {
+			return fmt.Errorf("retry.max_attempts must be > 0 when retry is enabled")
+		}
+		if c.Retry.InitialDelay <= 0 {
+			return fmt.Errorf("retry.initial_delay must be > 0 when retry is enabled")
+		}
+		if c.Retry.MaxDelay <= 0 {
+			return fmt.Errorf("retry.max_delay must be > 0 when retry is enabled")
+		}
+		if c.Retry.Multiplier <= 0 {
+			return fmt.Errorf("retry.multiplier must be > 0 when retry is enabled")
+		}
+		if c.Retry.InitialDelay > c.Retry.MaxDelay {
+			return fmt.Errorf("retry.initial_delay must be <= retry.max_delay")
+		}
+	}
+
+	// Circuit breaker
+	if c.CircuitBreaker.Enabled {
+		if c.CircuitBreaker.FailureThreshold <= 0 {
+			return fmt.Errorf("circuit_breaker.failure_threshold must be > 0 when circuit breaker is enabled")
+		}
+		if c.CircuitBreaker.SuccessThreshold <= 0 {
+			return fmt.Errorf("circuit_breaker.success_threshold must be > 0 when circuit breaker is enabled")
+		}
+		if c.CircuitBreaker.Timeout <= 0 {
+			return fmt.Errorf("circuit_breaker.timeout must be > 0 when circuit breaker is enabled")
+		}
+		if c.CircuitBreaker.MaxRequestsHalfOpen <= 0 {
+			return fmt.Errorf("circuit_breaker.max_requests_half_open must be > 0 when circuit breaker is enabled")
 		}
 	}
 
@@ -276,6 +328,21 @@ func DefaultConfig() *Config {
 	cfg.RateLimiting.WebSocket.Burst = 200
 	cfg.RateLimiting.WebSocket.MaxConcurrent = 0
 	cfg.RateLimiting.WebSocket.MaxMessageSizeBytes = 64 * 1024
+
+	// Retry defaults
+	cfg.Retry.Enabled = true
+	cfg.Retry.MaxAttempts = 3
+	cfg.Retry.InitialDelay = 100 * time.Millisecond
+	cfg.Retry.MaxDelay = 5 * time.Second
+	cfg.Retry.Multiplier = 2.0
+	cfg.Retry.Jitter = true
+
+	// Circuit breaker defaults
+	cfg.CircuitBreaker.Enabled = true
+	cfg.CircuitBreaker.FailureThreshold = 5
+	cfg.CircuitBreaker.SuccessThreshold = 2
+	cfg.CircuitBreaker.Timeout = 30 * time.Second
+	cfg.CircuitBreaker.MaxRequestsHalfOpen = 3
 
 	return cfg
 }
