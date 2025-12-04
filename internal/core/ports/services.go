@@ -34,4 +34,5 @@ type WebRTCService interface {
 	HandlePublisherAnswer(ctx context.Context, peerID domain.PeerID, answer webrtc.SessionDescription) error
 	CreateSubscriberOffer(ctx context.Context, peerID domain.PeerID, streamID domain.StreamID, sourcePeers []domain.PeerID) (webrtc.SessionDescription, error)
 	HandleSubscriberAnswer(ctx context.Context, peerID domain.PeerID, answer webrtc.SessionDescription) error
+	SwitchSubscriberQuality(ctx context.Context, peerID domain.PeerID, quality string) error
 }

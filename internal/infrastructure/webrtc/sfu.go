@@ -321,10 +321,26 @@ func (s *SFUService) createSubscriberOfferInternal(ctx context.Context, peerID d
 	pc.OnICEConnectionStateChange(s.handleICEConnectionState(peerID))
 	pc.OnConnectionStateChange(s.handleConnectionState(peerID))
 
+	// Determine initial quality based on network conditions
+	initialQuality := "medium" // Default quality
+	if s.qualityService != nil {
+		// Get initial metrics (would come from RTCP in real implementation)
+		initialMetrics := domain.NetworkMetrics{
+			BandwidthDown:    1000,
+			BandwidthUp:      500,
+			PacketLoss:       0.02,
+			Latency:          150 * time.Millisecond,
+			Jitter:           40 * time.Millisecond,
+			AvailableBitrate: 800,
+		}
+		initialQuality = s.qualityService.DetermineOptimalQuality(initialMetrics)
+	}
+
 	subscriber := &Subscriber{
 		PeerID:      peerID,
 		StreamID:    streamID,
 		PC:          pc,
+		Quality:     initialQuality,
 		SourcePeers: sourcePeers,
 		CreatedAt:   time.Now(),
 	}
@@ -695,4 +711,42 @@ func (s *SFUService) GetSubscriber(peerID domain.PeerID) (*Subscriber, bool) {
 	defer s.mu.RUnlock()
 	subscriber, exists := s.subscribers[peerID]
 	return subscriber, exists
+}
+
+// SwitchSubscriberQuality switches the quality layer for a subscriber (simulcast)
+func (s *SFUService) SwitchSubscriberQuality(ctx context.Context, peerID domain.PeerID, quality string) error {
+	s.mu.RLock()
+	subscriber, exists := s.subscribers[peerID]
+	s.mu.RUnlock()
+
+	if !exists {
+		return domain.ErrPeerNotFound
+	}
+
+	// Validate quality
+	validQualities := map[string]bool{"low": true, "medium": true, "high": true}
+	if !validQualities[quality] {
+		return fmt.Errorf("invalid quality: %s", quality)
+	}
+
+	// Update subscriber quality
+	s.mu.Lock()
+	subscriber.Quality = quality
+	s.mu.Unlock()
+
+	s.logger.Infow("switched subscriber quality",
+		"peer_id", peerID,
+		"quality", quality,
+	)
+
+	// In a full implementation, this would:
+	// 1. Get the RTPSender for the video track
+	// 2. Use SetRTPParameters to switch simulcast layers
+	// 3. Or use SetTrack to replace the track with the desired quality layer
+	// 
+	// For now, we just update the quality field. The actual simulcast switching
+	// would require access to RTPSender and RTPParameters, which needs to be
+	// stored when tracks are added.
+
+	return nil
 }
