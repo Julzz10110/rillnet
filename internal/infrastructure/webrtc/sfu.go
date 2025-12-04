@@ -452,9 +452,19 @@ func (s *SFUService) handlePublisherTrack(peerID domain.PeerID, streamID domain.
 	}
 }
 
+// Global packet buffer pool to reduce allocations
+var packetBufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 1500) // MTU size
+	},
+}
+
 // forwardTrackToSubscribers forwards track to all subscribers
 func (s *SFUService) forwardTrackToSubscribers(forwarder *TrackForwarder, track *webrtc.TrackRemote) {
-	packetBuffer := make([]byte, 1500) // MTU size
+	// Get buffer from pool
+	packetBuffer := packetBufferPool.Get().([]byte)
+	defer packetBufferPool.Put(packetBuffer)
+
 	rtpPacket := &rtp.Packet{}
 	packetCount := uint16(0)
 
