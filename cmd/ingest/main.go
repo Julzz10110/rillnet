@@ -75,7 +75,7 @@ func main() {
 	// Initialize services
 	qualityService := services.NewQualityService()
 	metricsService := services.NewMetricsService()
-	baseMeshService := services.NewMeshService(peerRepo, meshRepo)
+	baseMeshService := services.NewMeshService(peerRepo, meshRepo, cfg.Mesh, log)
 
 	// Wrap mesh service with retry and circuit breaker if enabled
 	var meshService ports.MeshService

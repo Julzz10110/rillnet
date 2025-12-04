@@ -8,6 +8,8 @@ import (
 	"rillnet/internal/core/domain"
 	"rillnet/internal/core/services"
 	"rillnet/internal/infrastructure/repositories/memory"
+	"rillnet/pkg/config"
+	"rillnet/pkg/logger"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -17,7 +19,9 @@ func TestStreamLifecycleIntegration(t *testing.T) {
 	streamRepo := memory.NewMemoryStreamRepository()
 	peerRepo := memory.NewMemoryPeerRepository()
 	meshRepo := memory.NewMemoryMeshRepository()
-	meshService := services.NewMeshService(peerRepo, meshRepo)
+	cfg := config.DefaultConfig()
+	logger := logger.New("info").Sugar()
+	meshService := services.NewMeshService(peerRepo, meshRepo, cfg.Mesh, logger)
 	metricsService := services.NewMetricsService()
 	streamService := services.NewStreamService(streamRepo, peerRepo, meshRepo, meshService, metricsService)
 
@@ -93,7 +97,9 @@ func TestStreamLifecycleIntegration(t *testing.T) {
 func TestMeshServiceIntegration(t *testing.T) {
 	peerRepo := memory.NewMemoryPeerRepository()
 	meshRepo := memory.NewMemoryMeshRepository()
-	meshService := services.NewMeshService(peerRepo, meshRepo)
+	cfg := config.DefaultConfig()
+	logger := logger.New("info").Sugar()
+	meshService := services.NewMeshService(peerRepo, meshRepo, cfg.Mesh, logger)
 
 	ctx := context.Background()
 	streamID := domain.StreamID("mesh-test-stream")

@@ -59,7 +59,7 @@ func main() {
 	meshRepo := repoFactory.CreateMeshRepository()
 
 	// Initialize mesh service
-	meshService := services.NewMeshService(peerRepo, meshRepo)
+	meshService := services.NewMeshService(peerRepo, meshRepo, cfg.Mesh, log)
 
 	// Initialize auth service (stream service not needed for signal server)
 	authService := services.NewAuthService(

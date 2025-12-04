@@ -8,6 +8,19 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// MeshConfig contains mesh network configuration
+type MeshConfig struct {
+	MaxConnections        int           `yaml:"max_connections"`
+	MinConnections        int           `yaml:"min_connections"`
+	MaxConnectionsPerPeer int           `yaml:"max_connections_per_peer"`
+	HealthCheckInterval   time.Duration `yaml:"health_check_interval"`
+	ReconnectAttempts     int           `yaml:"reconnect_attempts"`
+	RebalanceInterval     time.Duration `yaml:"rebalance_interval"`
+	LatencyWeight         float64       `yaml:"latency_weight"`
+	BandwidthWeight       float64       `yaml:"bandwidth_weight"`
+	ReliabilityWeight     float64       `yaml:"reliability_weight"`
+}
+
 type Config struct {
 	Server struct {
 		Address         string        `yaml:"address"`
@@ -37,11 +50,7 @@ type Config struct {
 		MaxBitrate int  `yaml:"max_bitrate"`
 	} `yaml:"webrtc"`
 
-	Mesh struct {
-		MaxConnections      int           `yaml:"max_connections"`
-		HealthCheckInterval time.Duration `yaml:"health_check_interval"`
-		ReconnectAttempts   int           `yaml:"reconnect_attempts"`
-	} `yaml:"mesh"`
+	Mesh MeshConfig `yaml:"mesh"`
 
 	Monitoring struct {
 		PrometheusEnabled bool          `yaml:"prometheus_enabled"`
@@ -149,11 +158,26 @@ func (c *Config) Validate() error {
 	if c.Mesh.MaxConnections <= 0 {
 		return fmt.Errorf("mesh.max_connections must be > 0")
 	}
+	if c.Mesh.MinConnections < 0 {
+		return fmt.Errorf("mesh.min_connections must be >= 0")
+	}
+	if c.Mesh.MinConnections > c.Mesh.MaxConnections {
+		return fmt.Errorf("mesh.min_connections must be <= max_connections")
+	}
+	if c.Mesh.MaxConnectionsPerPeer <= 0 {
+		return fmt.Errorf("mesh.max_connections_per_peer must be > 0")
+	}
 	if c.Mesh.HealthCheckInterval <= 0 {
 		return fmt.Errorf("mesh.health_check_interval must be > 0")
 	}
 	if c.Mesh.ReconnectAttempts < 0 {
 		return fmt.Errorf("mesh.reconnect_attempts must be >= 0")
+	}
+	if c.Mesh.RebalanceInterval <= 0 {
+		return fmt.Errorf("mesh.rebalance_interval must be > 0")
+	}
+	if c.Mesh.LatencyWeight < 0 || c.Mesh.BandwidthWeight < 0 || c.Mesh.ReliabilityWeight < 0 {
+		return fmt.Errorf("mesh weight values must be >= 0")
 	}
 
 	// Monitoring
@@ -298,8 +322,14 @@ func DefaultConfig() *Config {
 	cfg.Signal.ShutdownTimeout = 30 * time.Second
 
 	cfg.Mesh.MaxConnections = 4
+	cfg.Mesh.MinConnections = 2
+	cfg.Mesh.MaxConnectionsPerPeer = 8
 	cfg.Mesh.HealthCheckInterval = 10 * time.Second
 	cfg.Mesh.ReconnectAttempts = 3
+	cfg.Mesh.RebalanceInterval = 30 * time.Second
+	cfg.Mesh.LatencyWeight = 0.4
+	cfg.Mesh.BandwidthWeight = 0.4
+	cfg.Mesh.ReliabilityWeight = 0.2
 
 	cfg.Monitoring.PrometheusEnabled = true
 	cfg.Monitoring.PrometheusPort = 9090

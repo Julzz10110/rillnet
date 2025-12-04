@@ -28,8 +28,14 @@ webrtc:
 
 mesh:
   max_connections: 4
+  min_connections: 2
+  max_connections_per_peer: 8
   health_check_interval: 10s
   reconnect_attempts: 3
+  rebalance_interval: 30s
+  latency_weight: 0.4
+  bandwidth_weight: 0.4
+  reliability_weight: 0.2
 
 monitoring:
   prometheus_enabled: true
