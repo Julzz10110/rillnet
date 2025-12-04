@@ -10,6 +10,11 @@ type QualityService struct {
 	thresholds map[string]domain.NetworkMetrics
 }
 
+// GetThresholds returns the quality thresholds (for use by adaptive bitrate service)
+func (qs *QualityService) GetThresholds() map[string]domain.NetworkMetrics {
+	return qs.thresholds
+}
+
 func NewQualityService() *QualityService {
 	return &QualityService{
 		thresholds: map[string]domain.NetworkMetrics{
