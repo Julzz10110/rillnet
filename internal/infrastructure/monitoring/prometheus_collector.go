@@ -25,6 +25,13 @@ type PrometheusCollector struct {
 	streamBitrate     *prometheus.GaugeVec
 	streamPeerCount   *prometheus.GaugeVec
 	streamHealthScore *prometheus.GaugeVec
+
+	// Business metrics
+	streamViewerCount      *prometheus.GaugeVec
+	streamWatchDuration    *prometheus.HistogramVec
+	p2pEfficiencyPercent   *prometheus.GaugeVec
+	p2pDataTransferred     prometheus.Counter
+	serverDataTransferred  prometheus.Counter
 }
 
 func NewPrometheusCollector() *PrometheusCollector {
@@ -81,6 +88,33 @@ func NewPrometheusCollector() *PrometheusCollector {
 			Name: "rillnet_stream_health_score",
 			Help: "Health score of streams (0-100)",
 		}, []string{"stream_id"}),
+
+		// Business metrics
+		streamViewerCount: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "rillnet_stream_viewer_count",
+			Help: "Number of viewers (subscribers) per stream",
+		}, []string{"stream_id"}),
+
+		streamWatchDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "rillnet_stream_watch_duration_seconds",
+			Help:    "Duration of stream viewing sessions",
+			Buckets: []float64{60, 300, 600, 1800, 3600, 7200, 14400}, // 1min, 5min, 10min, 30min, 1h, 2h, 4h
+		}, []string{"stream_id"}),
+
+		p2pEfficiencyPercent: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "rillnet_p2p_efficiency_percent",
+			Help: "Percentage of traffic served through P2P (0-100)",
+		}, []string{"stream_id"}),
+
+		p2pDataTransferred: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "rillnet_p2p_data_transferred_bytes_total",
+			Help: "Total amount of data transferred through P2P connections in bytes",
+		}),
+
+		serverDataTransferred: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "rillnet_server_data_transferred_bytes_total",
+			Help: "Total amount of data transferred directly from server in bytes",
+		}),
 	}
 }
 
@@ -142,6 +176,46 @@ func (p *PrometheusCollector) RecordNetworkLatency(latency time.Duration) {
 func (p *PrometheusCollector) UpdateStreamMetrics(metrics *domain.StreamMetrics) {
 	p.streamHealthScore.WithLabelValues(string(metrics.StreamID)).Set(metrics.HealthScore)
 
+	// Update viewer count (subscribers)
+	p.streamViewerCount.WithLabelValues(string(metrics.StreamID)).Set(float64(metrics.ActiveSubscribers))
+
 	// Bitrate update by quality can be added here
 	// Based on real data from peers
+}
+
+// RecordViewerSession records a viewer session duration
+func (p *PrometheusCollector) RecordViewerSession(streamID domain.StreamID, duration time.Duration) {
+	p.streamWatchDuration.WithLabelValues(string(streamID)).Observe(duration.Seconds())
+}
+
+// RecordP2PDataTransferred records data transferred through P2P connections
+func (p *PrometheusCollector) RecordP2PDataTransferred(bytes int64) {
+	p.p2pDataTransferred.Add(float64(bytes))
+}
+
+// RecordServerDataTransferred records data transferred directly from server
+func (p *PrometheusCollector) RecordServerDataTransferred(bytes int64) {
+	p.serverDataTransferred.Add(float64(bytes))
+}
+
+// UpdateP2PEfficiency updates P2P efficiency percentage for a stream
+// efficiency should be between 0 and 100
+func (p *PrometheusCollector) UpdateP2PEfficiency(streamID domain.StreamID, efficiency float64) {
+	if efficiency < 0 {
+		efficiency = 0
+	}
+	if efficiency > 100 {
+		efficiency = 100
+	}
+	p.p2pEfficiencyPercent.WithLabelValues(string(streamID)).Set(efficiency)
+}
+
+// CalculateAndUpdateP2PEfficiency calculates P2P efficiency based on transferred data
+// and updates the metric for a stream
+func (p *PrometheusCollector) CalculateAndUpdateP2PEfficiency(streamID domain.StreamID, p2pBytes, totalBytes int64) {
+	if totalBytes == 0 {
+		return
+	}
+	efficiency := (float64(p2pBytes) / float64(totalBytes)) * 100.0
+	p.UpdateP2PEfficiency(streamID, efficiency)
 }

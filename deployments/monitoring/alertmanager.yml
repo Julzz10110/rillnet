@@ -1,0 +1,92 @@
+global:
+  resolve_timeout: 5m
+  # Slack configuration (uncomment and configure)
+  # slack_api_url: 'YOUR_SLACK_WEBHOOK_URL'
+  
+  # Email configuration (uncomment and configure)
+  # smtp_smarthost: 'smtp.gmail.com:587'
+  # smtp_from: 'alerts@rillnet.com'
+  # smtp_auth_username: 'alerts@rillnet.com'
+  # smtp_auth_password: 'your-pass'
+
+route:
+  receiver: 'default-receiver'
+  group_by: ['alertname', 'stream_id', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      continue: true
+    
+    # Warning alerts - less urgent
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      continue: true
+    
+    # Error alerts
+    - match:
+        severity: error
+      receiver: 'error-alerts'
+      continue: true
+
+receivers:
+  - name: 'default-receiver'
+    # Console receiver (for testing)
+    webhook_configs:
+      - url: 'http://localhost:9093/api/v1/alerts'
+        send_resolved: true
+
+  - name: 'critical-alerts'
+    # Slack notification (uncomment when configured)
+    # slack_configs:
+    #   - channel: '#rillnet-alerts-critical'
+    #     title: '🚨 Critical Alert: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    #     send_resolved: true
+    
+    # Email notification (uncomment when configured)
+    # email_configs:
+    #   - to: 'oncall@rillnet.com'
+    #     subject: '🚨 Critical: {{ .GroupLabels.alertname }}'
+    #     html: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    
+    webhook_configs:
+      - url: 'http://localhost:9093/api/v1/alerts'
+        send_resolved: true
+
+  - name: 'warning-alerts'
+    # Slack notification (uncomment when configured)
+    # slack_configs:
+    #   - channel: '#rillnet-alerts'
+    #     title: '⚠️ Warning: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    
+    webhook_configs:
+      - url: 'http://localhost:9093/api/v1/alerts'
+        send_resolved: true
+
+  - name: 'error-alerts'
+    # Slack notification (uncomment when configured)
+    # slack_configs:
+    #   - channel: '#rillnet-alerts'
+    #     title: '❌ Error: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    
+    webhook_configs:
+      - url: 'http://localhost:9093/api/v1/alerts'
+        send_resolved: true
+
+inhibit_rules:
+  # If critical alert fires, suppress warnings for same stream
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['stream_id']
+

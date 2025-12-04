@@ -1,0 +1,177 @@
+{
+  "dashboard": {
+    "title": "RillNet - Streams Dashboard",
+    "tags": ["rillnet", "streams"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Active Streams",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "rillnet_streams_active_total",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 10, "color": "yellow"},
+                {"value": 50, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Total Peers Connected",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+        "targets": [
+          {
+            "expr": "rillnet_peers_connected_total",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "blue"},
+                {"value": 100, "color": "yellow"},
+                {"value": 500, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Data Exchanged (Total)",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "rillnet_data_exchanged_bytes_total",
+            "refId": "A",
+            "format": "bytes"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "bytes",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Stream Health Score",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+        "targets": [
+          {
+            "expr": "rillnet_stream_health_score",
+            "refId": "A",
+            "legendFormat": "{{stream_id}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Health Score",
+            "min": 0,
+            "max": 100
+          },
+          {
+            "show": false
+          }
+        ],
+        "legend": {"show": true}
+      },
+      {
+        "id": 5,
+        "title": "Stream Bitrate by Quality",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+        "targets": [
+          {
+            "expr": "rillnet_stream_bitrate_bps",
+            "refId": "A",
+            "legendFormat": "{{stream_id}} - {{quality}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Bitrate (bps)",
+            "format": "bps"
+          },
+          {
+            "show": false
+          }
+        ],
+        "legend": {"show": true}
+      },
+      {
+        "id": 6,
+        "title": "Peers per Stream",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+        "targets": [
+          {
+            "expr": "rillnet_stream_peer_count",
+            "refId": "A",
+            "legendFormat": "{{stream_id}} - {{peer_type}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Peer Count"
+          },
+          {
+            "show": false
+          }
+        ],
+        "legend": {"show": true}
+      },
+      {
+        "id": 7,
+        "title": "WebRTC Connections",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+        "targets": [
+          {
+            "expr": "rate(rillnet_connections_total[5m])",
+            "refId": "A",
+            "legendFormat": "Connections/sec"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Connections/sec"
+          },
+          {
+            "show": false
+          }
+        ]
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "timepicker": {}
+  }
+}
+

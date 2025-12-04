@@ -1,0 +1,123 @@
+groups:
+  - name: rillnet_critical
+    interval: 30s
+    rules:
+      # High peer count alert
+      - alert: HighPeerCount
+        expr: rillnet_peers_connected_total > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of connected peers"
+          description: "Number of connected peers is {{ $value }}, which exceeds the threshold of 1000"
+
+      # Stream health score critical
+      - alert: LowStreamHealthScore
+        expr: rillnet_stream_health_score < 50
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Stream health score is critically low"
+          description: "Stream {{ $labels.stream_id }} has health score of {{ $value }}, which is below critical threshold"
+
+      # Stream health score warning
+      - alert: LowStreamHealthScoreWarning
+        expr: rillnet_stream_health_score < 70 and rillnet_stream_health_score >= 50
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stream health score is low"
+          description: "Stream {{ $labels.stream_id }} has health score of {{ $value }}, which is below optimal threshold"
+
+  - name: rillnet_performance
+    interval: 30s
+    rules:
+      # High latency alert
+      - alert: HighNetworkLatency
+        expr: histogram_quantile(0.95, rate(rillnet_network_latency_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High network latency detected"
+          description: "P95 network latency is {{ $value }}s, which exceeds 500ms threshold"
+
+      # High connection duration
+      - alert: HighConnectionDuration
+        expr: histogram_quantile(0.95, rate(rillnet_webrtc_connection_duration_seconds_bucket[5m])) > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WebRTC connections taking too long"
+          description: "P95 connection duration is {{ $value }}s, which exceeds 5 minute threshold"
+
+      # Low connection rate (possible service degradation)
+      - alert: LowConnectionRate
+        expr: rate(rillnet_connections_total[5m]) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low connection rate detected"
+          description: "Connection rate is {{ $value }} connections/sec, which is below normal threshold"
+
+  - name: rillnet_errors
+    interval: 30s
+    rules:
+      # No active streams (service might be down)
+      - alert: NoActiveStreams
+        expr: rillnet_streams_active_total == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No active streams"
+          description: "No active streams detected for 15 minutes. Service might be experiencing issues."
+
+      # No connected peers (service might be down)
+      - alert: NoConnectedPeers
+        expr: rillnet_peers_connected_total == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No connected peers"
+          description: "No connected peers detected for 10 minutes. Service might be experiencing issues."
+
+      # High data transfer rate (possible DDoS)
+      - alert: HighDataTransferRate
+        expr: rate(rillnet_data_exchanged_bytes_total[5m]) > 10737418240
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Unusually high data transfer rate"
+          description: "Data transfer rate is {{ $value }} bytes/sec ({{ $value | humanize1024 }}B/s), possible DDoS attack"
+
+  - name: rillnet_business
+    interval: 1m
+    rules:
+      # Stream with too many peers (performance degradation)
+      - alert: StreamOverloaded
+        expr: sum by (stream_id) (rillnet_stream_peer_count) > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stream is overloaded with peers"
+          description: "Stream {{ $labels.stream_id }} has {{ $value }} peers, which exceeds optimal threshold"
+
+      # Low P2P efficiency
+      - alert: LowP2PEfficiency
+        expr: rillnet_p2p_efficiency_percent < 50
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low P2P efficiency"
+          description: "Stream {{ $labels.stream_id }} has P2P efficiency of {{ $value }}%, which is below optimal threshold of 50%"
+
