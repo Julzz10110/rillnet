@@ -58,6 +58,14 @@ type Config struct {
 		MetricsInterval   time.Duration `yaml:"metrics_interval"`
 	} `yaml:"monitoring"`
 
+	Tracing struct {
+		Enabled     bool    `yaml:"enabled"`
+		ServiceName string  `yaml:"service_name"`
+		JaegerURL   string  `yaml:"jaeger_url"`
+		Environment string  `yaml:"environment"`
+		SampleRate  float64 `yaml:"sample_rate"`
+	} `yaml:"tracing"`
+
 	Logging struct {
 		Level  string `yaml:"level"`
 		Format string `yaml:"format"`
@@ -357,6 +365,12 @@ func DefaultConfig() *Config {
 	cfg.Monitoring.PrometheusEnabled = true
 	cfg.Monitoring.PrometheusPort = 9090
 	cfg.Monitoring.MetricsInterval = 30 * time.Second
+
+	cfg.Tracing.Enabled = false
+	cfg.Tracing.ServiceName = "rillnet"
+	cfg.Tracing.JaegerURL = "http://localhost:14268/api/traces"
+	cfg.Tracing.Environment = "development"
+	cfg.Tracing.SampleRate = 1.0
 
 	cfg.Logging.Level = "info"
 	cfg.Logging.Format = "json"

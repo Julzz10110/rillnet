@@ -42,6 +42,13 @@ monitoring:
   prometheus_port: 9090
   metrics_interval: 30s
 
+tracing:
+  enabled: false
+  service_name: "rillnet"
+  jaeger_url: "http://localhost:14268/api/traces"
+  environment: "development"
+  sample_rate: 1.0
+
 logging:
   level: "info"
   format: "json"
