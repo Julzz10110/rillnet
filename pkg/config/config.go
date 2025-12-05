@@ -112,6 +112,12 @@ type Config struct {
 		Timeout            time.Duration `yaml:"timeout"`
 		MaxRequestsHalfOpen int          `yaml:"max_requests_half_open"`
 	} `yaml:"circuit_breaker"`
+
+	Distributed struct {
+		InstanceID      string        `yaml:"instance_id"`
+		LockTTL         time.Duration `yaml:"lock_ttl"`
+		PeerRegistryTTL time.Duration `yaml:"peer_registry_ttl"`
+	} `yaml:"distributed"`
 }
 
 // Validate checks that configuration values are within acceptable ranges.
@@ -277,6 +283,23 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Distributed
+	if c.Distributed.InstanceID == "" {
+		// Generate instance ID from hostname if not provided
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			c.Distributed.InstanceID = fmt.Sprintf("instance-%d", time.Now().UnixNano())
+		} else {
+			c.Distributed.InstanceID = hostname
+		}
+	}
+	if c.Distributed.LockTTL <= 0 {
+		return fmt.Errorf("distributed.lock_ttl must be > 0")
+	}
+	if c.Distributed.PeerRegistryTTL <= 0 {
+		return fmt.Errorf("distributed.peer_registry_ttl must be > 0")
+	}
+
 	return nil
 }
 
@@ -373,6 +396,16 @@ func DefaultConfig() *Config {
 	cfg.CircuitBreaker.SuccessThreshold = 2
 	cfg.CircuitBreaker.Timeout = 30 * time.Second
 	cfg.CircuitBreaker.MaxRequestsHalfOpen = 3
+
+	// Distributed defaults
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		cfg.Distributed.InstanceID = fmt.Sprintf("instance-%d", time.Now().UnixNano())
+	} else {
+		cfg.Distributed.InstanceID = hostname
+	}
+	cfg.Distributed.LockTTL = 30 * time.Second
+	cfg.Distributed.PeerRegistryTTL = 5 * time.Minute
 
 	return cfg
 }

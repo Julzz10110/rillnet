@@ -87,3 +87,8 @@ circuit_breaker:
   success_threshold: 2
   timeout: 30s
   max_requests_half_open: 3
+
+distributed:
+  instance_id: ""  # Auto-generated from hostname if empty
+  lock_ttl: 30s
+  peer_registry_ttl: 5m
