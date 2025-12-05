@@ -128,15 +128,14 @@ func (r *MemoryPeerRepository) UpdatePeerLoad(ctx context.Context, peerID domain
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	peer, exists := r.peers[peerID]
+	_, exists := r.peers[peerID]
 	if !exists {
 		return domain.ErrPeerNotFound
 	}
 
-	fmt.Print("Peer:", peer)
-
 	// Update peer load
 	// In real implementation, more complex logic would be here
+	// For now, just verify peer exists
 	return nil
 }
 

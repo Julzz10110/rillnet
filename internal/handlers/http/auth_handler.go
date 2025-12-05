@@ -7,6 +7,8 @@ import (
 
 	"rillnet/internal/core/domain"
 	"rillnet/internal/core/services"
+	"rillnet/pkg/errors"
+	"rillnet/pkg/validation"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -49,12 +51,26 @@ type RefreshTokenRequest struct {
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(errors.NewInvalidInputError("invalid request format"))
 		return
 	}
 
 	req.Username = strings.TrimSpace(req.Username)
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+
+	// Validate input
+	if err := validation.ValidateUsername(req.Username); err != nil {
+		c.Error(errors.NewInvalidInputError(err.Error()))
+		return
+	}
+	if err := validation.ValidateEmail(req.Email); err != nil {
+		c.Error(errors.NewInvalidInputError(err.Error()))
+		return
+	}
+	if err := validation.ValidatePassword(req.Password); err != nil {
+		c.Error(errors.NewInvalidInputError(err.Error()))
+		return
+	}
 
 	// TODO: In production, implement proper user storage and password hashing
 	// For now, generate a user ID and create tokens

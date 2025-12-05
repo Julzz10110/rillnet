@@ -7,6 +7,7 @@ import (
 
 	"rillnet/internal/core/domain"
 	"rillnet/internal/core/ports"
+	"rillnet/pkg/utils"
 )
 
 type streamService struct {
@@ -43,7 +44,7 @@ func (s *streamService) CreateStream(ctx context.Context, name string, owner dom
 	}
 
 	stream := &domain.Stream{
-		ID:          domain.StreamID(generateStreamID()),
+		ID:          domain.StreamID(utils.GenerateStreamID()),
 		Name:        name,
 		Owner:       owner,
 		OwnerUserID: ownerUserID,
@@ -201,6 +202,3 @@ func (s *streamService) calculateHealthScore(publishers, subscribers, bitrate in
 	return totalScore
 }
 
-func generateStreamID() string {
-	return fmt.Sprintf("stream_%d", time.Now().UnixNano())
-}

@@ -13,6 +13,7 @@ import (
 	"rillnet/internal/core/domain"
 	"rillnet/internal/core/ports"
 	rlog "rillnet/pkg/logger"
+	"rillnet/pkg/utils"
 
 	"rillnet/internal/core/services"
 
@@ -402,7 +403,7 @@ func (s *WebSocketServer) handleJoinStream(ctx context.Context, peerID domain.Pe
 	peer := &domain.Peer{
 		ID:        peerID,
 		StreamID:  payload.StreamID,
-		SessionID: domain.SessionID(generateSessionID()),
+		SessionID: domain.SessionID(utils.GenerateSessionID()),
 		Address:   "dynamic", // In real implementation, actual address should be obtained
 		Capabilities: domain.PeerCapabilities{
 			MaxBitrate:      payload.Capabilities.MaxBitrate,
@@ -883,6 +884,3 @@ func (s *WebSocketServer) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func generateSessionID() string {
-	return fmt.Sprintf("session_%d", time.Now().UnixNano())
-}

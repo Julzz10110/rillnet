@@ -1,12 +1,13 @@
 package http
 
 import (
-	"fmt"
 	"net/http"
-	"time"
 
 	"rillnet/internal/core/domain"
 	"rillnet/internal/core/ports"
+	"rillnet/pkg/errors"
+	"rillnet/pkg/utils"
+	"rillnet/pkg/validation"
 
 	webrtc "github.com/pion/webrtc/v3"
 
@@ -54,14 +55,32 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 	}
 
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(errors.NewInvalidInputError("invalid request format"))
+		return
+	}
+
+	// Validate input
+	if err := validation.ValidateStreamName(req.Name); err != nil {
+		c.Error(errors.NewInvalidInputError(err.Error()))
+		return
+	}
+	if err := validation.ValidatePeerID(string(req.Owner)); err != nil {
+		c.Error(errors.NewInvalidInputError(err.Error()))
+		return
+	}
+	if err := validation.ValidateMaxPeers(req.MaxPeers); err != nil {
+		c.Error(errors.NewInvalidInputError(err.Error()))
 		return
 	}
 
 	// User ID is already in context from AuthMiddleware
 	stream, err := h.streamService.CreateStream(c.Request.Context(), req.Name, req.Owner, req.MaxPeers)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if err == domain.ErrStreamNotFound {
+			c.Error(errors.NewNotFoundError("stream"))
+			return
+		}
+		c.Error(errors.WrapError(err, errors.ErrCodeInternal, "failed to create stream", 500))
 		return
 	}
 
@@ -73,13 +92,19 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 func (h *StreamHandler) GetStream(c *gin.Context) {
 	streamID := domain.StreamID(c.Param("id"))
 
+	// Validate stream ID
+	if err := validation.ValidateStreamID(string(streamID)); err != nil {
+		c.Error(errors.NewInvalidInputError(err.Error()))
+		return
+	}
+
 	stream, err := h.streamService.GetStream(c.Request.Context(), streamID)
 	if err != nil {
 		if err == domain.ErrStreamNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Stream not found"})
+			c.Error(errors.NewNotFoundError("stream"))
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.Error(errors.WrapError(err, errors.ErrCodeInternal, "failed to get stream", 500))
 		return
 	}
 
@@ -113,7 +138,7 @@ func (h *StreamHandler) JoinStream(c *gin.Context) {
 	peer := &domain.Peer{
 		ID:        req.PeerID,
 		StreamID:  streamID,
-		SessionID: domain.SessionID(generateSessionID()),
+		SessionID: domain.SessionID(utils.GenerateSessionID()),
 		Address:   c.ClientIP(), // In real application, actual address should be obtained
 		Capabilities: domain.PeerCapabilities{
 			MaxBitrate:      req.Capabilities.MaxBitrate,
@@ -216,8 +241,7 @@ func (h *StreamHandler) CreatePublisherOffer(c *gin.Context) {
 
 func (h *StreamHandler) HandlePublisherAnswer(c *gin.Context) {
 	streamID := domain.StreamID(c.Param("id"))
-
-	fmt.Print("Stream ID:", streamID)
+	_ = streamID // for potential future use
 
 	var req struct {
 		PeerID domain.PeerID             `json:"peer_id" binding:"required"`
@@ -265,9 +289,7 @@ func (h *StreamHandler) CreateSubscriberOffer(c *gin.Context) {
 }
 
 func (h *StreamHandler) HandleSubscriberAnswer(c *gin.Context) {
-	streamID := domain.StreamID(c.Param("id"))
-
-	fmt.Print("Stream ID:", streamID)
+	_ = domain.StreamID(c.Param("id")) // streamID for potential future use
 
 	var req struct {
 		PeerID domain.PeerID             `json:"peer_id" binding:"required"`
@@ -287,8 +309,4 @@ func (h *StreamHandler) HandleSubscriberAnswer(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "answer_processed",
 	})
-}
-
-func generateSessionID() string {
-	return fmt.Sprintf("session_%d", time.Now().UnixNano())
 }
