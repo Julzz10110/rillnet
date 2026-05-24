@@ -95,12 +95,7 @@ func (s *streamService) JoinStream(ctx context.Context, streamID domain.StreamID
 		return fmt.Errorf("stream is full: %d/%d peers", len(currentPeers), stream.MaxPeers)
 	}
 
-	// Add peer to repository
-	if err := s.peerRepo.Add(ctx, peer); err != nil {
-		return fmt.Errorf("failed to add peer: %w", err)
-	}
-
-	// Add peer to mesh service
+	// Mesh service owns peer repository insertion (avoids duplicate Add calls).
 	if err := s.meshService.AddPeer(ctx, peer); err != nil {
 		return fmt.Errorf("failed to add peer to mesh: %w", err)
 	}
@@ -122,14 +117,9 @@ func (s *streamService) JoinStream(ctx context.Context, streamID domain.StreamID
 }
 
 func (s *streamService) LeaveStream(ctx context.Context, streamID domain.StreamID, peerID domain.PeerID) error {
-	// Remove peer from mesh
+	// Mesh service removes peer from repository and mesh connections.
 	if err := s.meshService.RemovePeer(ctx, peerID); err != nil {
 		return fmt.Errorf("failed to remove peer from mesh: %w", err)
-	}
-
-	// Remove peer from repository
-	if err := s.peerRepo.Remove(ctx, peerID); err != nil {
-		return fmt.Errorf("failed to remove peer: %w", err)
 	}
 
 	// Rebuild mesh network
