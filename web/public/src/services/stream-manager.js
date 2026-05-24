@@ -1,19 +1,26 @@
-// Stream Manager for WebRTC streaming
+// Stream Manager for WebRTC streaming (SFU: server offer → browser answer)
 class StreamManager {
-    constructor(signalClient, apiClient) {
+    constructor(signalClient, apiClient, peerId) {
         this.signalClient = signalClient;
         this.apiClient = apiClient;
+        this.peerId = peerId;
         this.localStream = null;
         this.remoteStream = null;
         this.peerConnection = null;
-        
+
         this.currentStreamId = null;
         this.isPublisher = false;
         this.isSubscriber = false;
         this.videoQuality = 'medium';
-        
+
         this.eventHandlers = {};
         this.targetPeerID = null;
+        this.signalingMode = 'http';
+        this._joinInProgress = false;
+    }
+
+    setPeerId(peerId) {
+        this.peerId = peerId;
     }
 
     on(event, handler) {
@@ -29,7 +36,21 @@ class StreamManager {
         }
     }
 
-    async startPublisher(streamId) {
+    getIceConfiguration() {
+        return {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+            ],
+        };
+    }
+
+    async startPublisher(streamId, peerId) {
+        if (peerId) this.peerId = peerId;
+        if (!this.peerId) {
+            throw new Error('peer_id is required');
+        }
+
         try {
             const constraints = this.getVideoConstraints(this.videoQuality);
             this.localStream = await navigator.mediaDevices.getUserMedia({
@@ -37,8 +58,8 @@ class StreamManager {
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
-                    autoGainControl: true
-                }
+                    autoGainControl: true,
+                },
             });
 
             const localVideo = document.getElementById('localVideo');
@@ -47,23 +68,41 @@ class StreamManager {
                 await localVideo.play();
             }
 
-            await this.setupPeerConnection('publisher', streamId);
-            
+            this.peerConnection = new RTCPeerConnection(this.getIceConfiguration());
+            this.setupPeerConnectionEvents();
+            this.localStream.getTracks().forEach((track) => {
+                this.peerConnection.addTrack(track, this.localStream);
+            });
+
+            const serverOffer = await this.apiClient.createPublisherOffer(streamId, this.peerId);
+            await this.peerConnection.setRemoteDescription({
+                type: 'offer',
+                sdp: serverOffer.sdp,
+            });
+
+            const answer = await this.peerConnection.createAnswer();
+            await this.peerConnection.setLocalDescription(answer);
+            await this.apiClient.handlePublisherAnswer(streamId, this.peerId, answer);
+
             this.isPublisher = true;
             this.currentStreamId = streamId;
             this.emit('streamStarted', this.localStream);
-            
-            return this.localStream;
 
+            return this.localStream;
         } catch (error) {
             console.error('Error starting publisher:', error);
-            throw new Error(`Failed to access camera: ${error.message}`);
+            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                throw new Error(
+                    'Camera/microphone blocked. Allow access for this site in browser settings and retry.'
+                );
+            }
+            throw new Error(`Failed to start publisher: ${error.message}`);
         }
     }
 
     async stopPublisher() {
         if (this.localStream) {
-            this.localStream.getTracks().forEach(track => track.stop());
+            this.localStream.getTracks().forEach((track) => track.stop());
             this.localStream = null;
         }
 
@@ -88,17 +127,17 @@ class StreamManager {
         try {
             const videoTrack = this.localStream.getVideoTracks()[0];
             const constraints = videoTrack.getConstraints();
-            
+
             constraints.facingMode = constraints.facingMode === 'user' ? 'environment' : 'user';
-            
+
             const newStream = await navigator.mediaDevices.getUserMedia({
                 video: constraints,
-                audio: true
+                audio: true,
             });
 
             const newVideoTrack = newStream.getVideoTracks()[0];
             const sender = this.getVideoSender();
-            
+
             if (sender) {
                 await sender.replaceTrack(newVideoTrack);
                 this.localStream.getVideoTracks()[0].stop();
@@ -113,23 +152,54 @@ class StreamManager {
             }
 
             this.emit('cameraSwitched');
-            
         } catch (error) {
             console.error('Error switching camera:', error);
             throw new Error(`Camera switch failed: ${error.message}`);
         }
     }
 
-    async joinStream(streamId) {
+    async joinStream(streamId, peerId, sourcePeers = []) {
+        if (this._joinInProgress) {
+            return;
+        }
+        if (peerId) this.peerId = peerId;
+        if (!this.peerId) {
+            throw new Error('peer_id is required');
+        }
+
+        this._joinInProgress = true;
         try {
+            await this.leaveStream();
+
             this.currentStreamId = streamId;
-            await this.setupPeerConnection('subscriber', streamId);
+            this.peerConnection = new RTCPeerConnection(this.getIceConfiguration());
+            this.setupPeerConnectionEvents();
+
+            this.peerConnection.addTransceiver('video', { direction: 'recvonly' });
+            this.peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+
+            const serverOffer = await this.apiClient.createSubscriberOffer(
+                streamId,
+                this.peerId,
+                sourcePeers
+            );
+            await this.peerConnection.setRemoteDescription({
+                type: 'offer',
+                sdp: serverOffer.sdp,
+            });
+
+            const answer = await this.peerConnection.createAnswer();
+            await this.peerConnection.setLocalDescription(answer);
+            await this.apiClient.handleSubscriberAnswer(streamId, this.peerId, answer);
+
             this.isSubscriber = true;
             this.emit('streamJoined', streamId);
-            
         } catch (error) {
             console.error('Error joining stream:', error);
+            await this.leaveStream();
             throw new Error(`Failed to join stream: ${error.message}`);
+        } finally {
+            this._joinInProgress = false;
         }
     }
 
@@ -140,7 +210,7 @@ class StreamManager {
         }
 
         if (this.remoteStream) {
-            this.remoteStream.getTracks().forEach(track => track.stop());
+            this.remoteStream.getTracks().forEach((track) => track.stop());
             this.remoteStream = null;
         }
 
@@ -154,119 +224,51 @@ class StreamManager {
         this.emit('streamLeft');
     }
 
-    async setupPeerConnection(role, streamId) {
-        // Get ICE servers from config (should be passed from backend)
-        const configuration = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        };
-
-        this.peerConnection = new RTCPeerConnection(configuration);
-        this.setupPeerConnectionEvents();
-
-        if (role === 'publisher' && this.localStream) {
-            this.localStream.getTracks().forEach(track => {
-                this.peerConnection.addTrack(track, this.localStream);
-            });
-        }
-
-        // Create offer/answer based on role
-        if (role === 'publisher') {
-            await this.createPublisherOffer(streamId);
-        } else {
-            await this.createSubscriberOffer(streamId);
-        }
-    }
-
-    async createPublisherOffer(streamId) {
-        try {
-            const offer = await this.peerConnection.createOffer();
-            await this.peerConnection.setLocalDescription(offer);
-
-            // Send offer via API
-            const response = await this.apiClient.createPublisherOffer(streamId, offer.sdp);
-            
-            if (response.answer) {
-                await this.peerConnection.setRemoteDescription({
-                    type: 'answer',
-                    sdp: response.answer
-                });
-            }
-
-            // Also send via WebSocket for P2P
-            this.signalClient.sendOffer(offer.sdp, null, streamId);
-
-        } catch (error) {
-            console.error('Error creating publisher offer:', error);
-            throw error;
-        }
-    }
-
-    async createSubscriberOffer(streamId) {
-        try {
-            const offer = await this.peerConnection.createOffer();
-            await this.peerConnection.setLocalDescription(offer);
-
-            // Send offer via API
-            const response = await this.apiClient.createSubscriberOffer(streamId, offer.sdp);
-            
-            if (response.answer) {
-                await this.peerConnection.setRemoteDescription({
-                    type: 'answer',
-                    sdp: response.answer
-                });
-            }
-
-            // Also send via WebSocket for P2P
-            this.signalClient.sendOffer(offer.sdp, null, streamId);
-
-        } catch (error) {
-            console.error('Error creating subscriber offer:', error);
-            throw error;
-        }
-    }
-
     handleOffer(data) {
-        if (!this.peerConnection) return;
+        if (this.signalingMode === 'http' || !this.peerConnection) return;
 
-        this.peerConnection.setRemoteDescription({
-            type: 'offer',
-            sdp: data.sdp
-        }).then(() => {
-            return this.peerConnection.createAnswer();
-        }).then(answer => {
-            return this.peerConnection.setLocalDescription(answer);
-        }).then(() => {
-            // Send answer via WebSocket
-            this.signalClient.sendAnswer(this.peerConnection.localDescription.sdp, data.fromPeer, data.streamId);
-        }).catch(error => {
-            console.error('Error handling offer:', error);
-        });
+        this.peerConnection
+            .setRemoteDescription({
+                type: 'offer',
+                sdp: data.sdp,
+            })
+            .then(() => this.peerConnection.createAnswer())
+            .then((answer) => this.peerConnection.setLocalDescription(answer))
+            .then(() => {
+                this.signalClient.sendAnswer(
+                    this.peerConnection.localDescription.sdp,
+                    data.fromPeer,
+                    data.streamId
+                );
+            })
+            .catch((error) => {
+                console.error('Error handling offer:', error);
+            });
     }
 
     handleAnswer(data) {
-        if (!this.peerConnection) return;
+        if (this.signalingMode === 'http' || !this.peerConnection) return;
 
-        this.peerConnection.setRemoteDescription({
-            type: 'answer',
-            sdp: data.sdp
-        }).catch(error => {
-            console.error('Error handling answer:', error);
-        });
+        this.peerConnection
+            .setRemoteDescription({
+                type: 'answer',
+                sdp: data.sdp,
+            })
+            .catch((error) => {
+                console.error('Error handling answer:', error);
+            });
     }
 
     handleICECandidate(data) {
-        if (!this.peerConnection || !data.candidate) return;
+        if (this.signalingMode === 'http' || !this.peerConnection || !data.candidate) return;
 
         const candidate = new RTCIceCandidate({
             candidate: data.candidate,
             sdpMLineIndex: 0,
-            sdpMid: '0'
+            sdpMid: '0',
         });
 
-        this.peerConnection.addIceCandidate(candidate).catch(error => {
+        this.peerConnection.addIceCandidate(candidate).catch((error) => {
             console.error('Error adding ICE candidate:', error);
         });
     }
@@ -280,14 +282,18 @@ class StreamManager {
         this.peerConnection.onconnectionstatechange = () => {
             const state = this.peerConnection.connectionState;
             this.emit('connectionStateChange', state);
-            
+
             if (state === 'connected') {
                 this.emit('connectionEstablished');
             }
         };
 
         this.peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
+            if (
+                event.candidate &&
+                this.signalingMode === 'websocket' &&
+                this.signalClient?.connected
+            ) {
                 this.signalClient.sendICECandidate(
                     event.candidate.candidate,
                     this.targetPeerID,
@@ -298,13 +304,20 @@ class StreamManager {
 
         this.peerConnection.ontrack = (event) => {
             this.remoteStream = event.streams[0];
-            
+
             const remoteVideo = document.getElementById('remoteVideo');
             if (remoteVideo) {
                 remoteVideo.srcObject = this.remoteStream;
-                remoteVideo.play().catch(console.error);
+                const playPromise = remoteVideo.play();
+                if (playPromise) {
+                    playPromise.catch((err) => {
+                        if (err?.name !== 'AbortError') {
+                            console.error('remoteVideo.play failed:', err);
+                        }
+                    });
+                }
             }
-            
+
             this.emit('streamReceived', this.remoteStream);
         };
     }
@@ -314,40 +327,38 @@ class StreamManager {
             low: {
                 width: { ideal: 640 },
                 height: { ideal: 360 },
-                frameRate: { ideal: 15, max: 30 }
+                frameRate: { ideal: 15, max: 30 },
             },
             medium: {
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
-                frameRate: { ideal: 30, max: 60 }
+                frameRate: { ideal: 30, max: 60 },
             },
             high: {
                 width: { ideal: 1920 },
                 height: { ideal: 1080 },
-                frameRate: { ideal: 30, max: 60 }
-            }
+                frameRate: { ideal: 30, max: 60 },
+            },
         };
-        
+
         return constraints[quality] || constraints.medium;
     }
 
     setVideoQuality(quality) {
         this.videoQuality = quality;
-        
+
         if (this.isPublisher && this.localStream) {
             const videoTrack = this.localStream.getVideoTracks()[0];
             const constraints = this.getVideoConstraints(quality);
-            
+
             videoTrack.applyConstraints(constraints).catch(console.error);
         }
     }
 
     getVideoSender() {
         if (!this.peerConnection) return null;
-        
+
         const senders = this.peerConnection.getSenders();
-        return senders.find(sender => 
-            sender.track && sender.track.kind === 'video'
-        );
+        return senders.find((sender) => sender.track && sender.track.kind === 'video');
     }
 }

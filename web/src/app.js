@@ -233,7 +233,15 @@ class RillNetApp {
         try {
             await this.apiClient.joinStream(selectedStream, this.currentPeerID, false, { maxBitrate: 2000, codecs: ['VP8', 'Opus'] });
             this.signalClient.joinStream(selectedStream, false, { maxBitrate: 2000, codecs: ['VP8', 'Opus'] });
-            await this.streamManager.joinStream(selectedStream);
+            let sourcePeers = [];
+            try {
+                const streamInfo = await this.apiClient.getStream(selectedStream);
+                const owner = streamInfo?.stream?.owner || streamInfo?.stream?.Owner;
+                if (owner) sourcePeers = [owner];
+            } catch (_) {
+                /* optional: SFU auto-discovers publishers when source_peers is empty */
+            }
+            await this.streamManager.joinStream(selectedStream, this.currentPeerID, sourcePeers);
             this.isSubscriber = true;
             this.currentStreamId = selectedStream;
             this.updateSubscriberUI(true);

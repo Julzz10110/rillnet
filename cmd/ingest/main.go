@@ -219,6 +219,7 @@ func main() {
 		streamAPI.POST("/:id/join", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.JoinStream)
 		streamAPI.POST("/:id/leave", streamHandler.LeaveStream)
 		streamAPI.GET("/:id/stats", streamHandler.GetStreamStats)
+		streamAPI.GET("/:id/webrtc/ready", streamHandler.GetWebRTCReadiness)
 
 		// WebRTC endpoints
 		streamAPI.POST("/:id/publisher/offer", middleware.StreamPermissionMiddleware(authService, domain.RoleOwner), streamHandler.CreatePublisherOffer)

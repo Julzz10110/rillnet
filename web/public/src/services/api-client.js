@@ -12,6 +12,41 @@ class APIClient {
         this.refreshToken = refreshToken;
     }
 
+    persistTokens() {
+        if (this.accessToken) {
+            localStorage.setItem('rillnet_access_token', this.accessToken);
+        }
+        if (this.refreshToken) {
+            localStorage.setItem('rillnet_refresh_token', this.refreshToken);
+        }
+    }
+
+    isAccessTokenExpired(skewSeconds = 30) {
+        if (!this.accessToken) {
+            return true;
+        }
+        try {
+            const payload = this.accessToken.split('.')[1];
+            const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+            const claims = JSON.parse(json);
+            if (!claims.exp) {
+                return true;
+            }
+            return claims.exp * 1000 <= Date.now() + skewSeconds * 1000;
+        } catch {
+            return true;
+        }
+    }
+
+    async ensureAccessToken() {
+        if (!this.isAccessTokenExpired()) {
+            return this.accessToken;
+        }
+        await this.refreshAccessToken();
+        this.persistTokens();
+        return this.accessToken;
+    }
+
     async request(method, endpoint, data = null) {
         const url = `${this.baseURL}${endpoint}`;
         const options = {
@@ -34,10 +69,11 @@ class APIClient {
             const contentType = response.headers.get('content-type');
             
             if (!response.ok) {
-                const errorData = contentType?.includes('application/json') 
-                    ? await response.json() 
-                    : { error: await response.text() };
-                throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+                const errorData = contentType?.includes('application/json')
+                    ? await response.json()
+                    : { message: await response.text() };
+                const message = errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+                throw new Error(typeof message === 'string' ? message : JSON.stringify(errorData));
             }
 
             if (contentType?.includes('application/json')) {
@@ -78,7 +114,8 @@ class APIClient {
             refresh_token: this.refreshToken,
         });
         if (response.access_token) {
-            this.accessToken = response.access_token;
+            this.setTokens(response.access_token, response.refresh_token || this.refreshToken);
+            this.persistTokens();
         }
         return response;
     }
@@ -121,28 +158,41 @@ class APIClient {
         return this.request('GET', `/api/v1/streams/${streamId}/stats`);
     }
 
-    // WebRTC endpoints
-    async createPublisherOffer(streamId, sdp) {
+    async getWebRTCReadiness(streamId) {
+        return this.request('GET', `/api/v1/streams/${streamId}/webrtc/ready`);
+    }
+
+    // WebRTC endpoints (SFU: server creates offer, client returns answer)
+    async createPublisherOffer(streamId, peerId) {
         return this.request('POST', `/api/v1/streams/${streamId}/publisher/offer`, {
-            sdp,
+            peer_id: peerId,
         });
     }
 
-    async handlePublisherAnswer(streamId, sdp) {
+    async handlePublisherAnswer(streamId, peerId, answer) {
         return this.request('POST', `/api/v1/streams/${streamId}/publisher/answer`, {
-            sdp,
+            peer_id: peerId,
+            answer: {
+                type: answer.type,
+                sdp: answer.sdp,
+            },
         });
     }
 
-    async createSubscriberOffer(streamId, sdp) {
+    async createSubscriberOffer(streamId, peerId, sourcePeers = []) {
         return this.request('POST', `/api/v1/streams/${streamId}/subscriber/offer`, {
-            sdp,
+            peer_id: peerId,
+            source_peers: sourcePeers,
         });
     }
 
-    async handleSubscriberAnswer(streamId, sdp) {
+    async handleSubscriberAnswer(streamId, peerId, answer) {
         return this.request('POST', `/api/v1/streams/${streamId}/subscriber/answer`, {
-            sdp,
+            peer_id: peerId,
+            answer: {
+                type: answer.type,
+                sdp: answer.sdp,
+            },
         });
     }
 

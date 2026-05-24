@@ -1,6 +1,7 @@
 package http
 
 import (
+	goerrors "errors"
 	"net/http"
 
 	"rillnet/internal/core/domain"
@@ -37,6 +38,7 @@ func (h *StreamHandler) SetupRoutes(router *gin.Engine) {
 		api.POST("/streams/:id/join", h.JoinStream)
 		api.POST("/streams/:id/leave", h.LeaveStream)
 		api.GET("/streams/:id/stats", h.GetStreamStats)
+		api.GET("/streams/:id/webrtc/ready", h.GetWebRTCReadiness)
 		api.GET("/streams", h.ListStreams)
 
 		// WebRTC endpoints
@@ -202,6 +204,21 @@ func (h *StreamHandler) GetStreamStats(c *gin.Context) {
 	})
 }
 
+func (h *StreamHandler) GetWebRTCReadiness(c *gin.Context) {
+	streamID := domain.StreamID(c.Param("id"))
+
+	if err := validation.ValidateStreamID(string(streamID)); err != nil {
+		reportError(c, errors.NewInvalidInputError(err.Error()))
+		return
+	}
+
+	ready := h.webrtcService.HasActiveMedia(c.Request.Context(), streamID)
+	c.JSON(http.StatusOK, gin.H{
+		"stream_id":       streamID,
+		"publisher_ready": ready,
+	})
+}
+
 func (h *StreamHandler) ListStreams(c *gin.Context) {
 	streams, err := h.streamService.ListStreams(c.Request.Context())
 	if err != nil {
@@ -278,7 +295,7 @@ func (h *StreamHandler) CreateSubscriberOffer(c *gin.Context) {
 
 	offer, err := h.webrtcService.CreateSubscriberOffer(c.Request.Context(), req.PeerID, streamID, req.SourcePeers)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeWebRTCError(c, err)
 		return
 	}
 
@@ -302,11 +319,26 @@ func (h *StreamHandler) HandleSubscriberAnswer(c *gin.Context) {
 	}
 
 	if err := h.webrtcService.HandleSubscriberAnswer(c.Request.Context(), req.PeerID, req.Answer); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeWebRTCError(c, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status": "answer_processed",
 	})
+}
+
+func writeWebRTCError(c *gin.Context, err error) {
+	if goerrors.Is(err, domain.ErrNoPublisherMedia) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   err.Error(),
+			"message": "Start publishing on this stream before joining as a viewer",
+		})
+		return
+	}
+	if goerrors.Is(err, domain.ErrPeerNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 }

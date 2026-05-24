@@ -9,4 +9,5 @@ var (
 	ErrConnectionFailed    = errors.New("connection failed")
 	ErrInsufficientQuality = errors.New("insufficient quality")
 	ErrPeerCapacityReached = errors.New("peer capacity reached")
+	ErrNoPublisherMedia    = errors.New("no publisher media available for stream")
 )

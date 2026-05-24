@@ -26,20 +26,15 @@ class RillNetApp {
                 this.apiClient.setTokens(savedToken, savedRefreshToken);
                 this.currentPeerID = savedPeerID;
                 this.signalClient.setPeerID(savedPeerID);
-                this.signalClient.setAccessToken(savedToken);
                 this.isAuthenticated = true;
                 if (savedUsername) this.currentUser = { username: savedUsername };
                 try {
+                    await this.apiClient.ensureAccessToken();
+                    this.signalClient.setAccessToken(this.apiClient.accessToken);
                     await this.initializeAfterAuth();
                 } catch (error) {
-                    if (error.message && error.message.includes('token expired')) {
-                        localStorage.removeItem('rillnet_access_token');
-                        localStorage.removeItem('rillnet_refresh_token');
-                        this.isAuthenticated = false;
-                        this.showLoginForm();
-                    } else {
-                        throw error;
-                    }
+                    this.clearSession();
+                    this.showLoginForm();
                 }
             } else {
                 this.showLoginForm();
@@ -59,8 +54,8 @@ class RillNetApp {
             <div id="loginForm" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
                 background:white;padding:2rem;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1);z-index:1000;min-width:300px;">
                 <h2 style="margin-top:0;">RillNet Login</h2>
-                <input type="text" id="loginUsername" placeholder="Username" style="width:100%;padding:0.5rem;margin-bottom:0.5rem;box-sizing:border-box;">
-                <input type="password" id="loginPassword" placeholder="Password" style="width:100%;padding:0.5rem;box-sizing:border-box;">
+                <input type="text" id="loginUsername" placeholder="Username (3+ characters)" minlength="3" autocomplete="username" style="width:100%;padding:0.5rem;margin-bottom:0.5rem;box-sizing:border-box;">
+                <input type="password" id="loginPassword" placeholder="Password (6+ characters)" minlength="6" autocomplete="current-password" style="width:100%;padding:0.5rem;box-sizing:border-box;">
                 <button id="loginBtn" style="width:100%;padding:0.5rem;margin-top:0.5rem;background:#007bff;color:white;border:none;border-radius:4px;cursor:pointer;">Login</button>
                 <div style="margin-top:1rem;text-align:center;"><small>Or <a href="#" id="registerLink">register</a></small></div>
                 <div id="loginError" style="color:red;margin-top:0.5rem;display:none;"></div>
@@ -75,20 +70,36 @@ class RillNetApp {
             <div id="registerForm" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
                 background:white;padding:2rem;border-radius:8px;z-index:1000;">
                 <h2>RillNet Register</h2>
-                <input type="text" id="regUsername" placeholder="Username" style="width:100%;padding:0.5rem;margin-bottom:0.5rem;">
-                <input type="email" id="regEmail" placeholder="Email" style="width:100%;padding:0.5rem;margin-bottom:0.5rem;">
-                <input type="password" id="regPassword" placeholder="Password" style="width:100%;padding:0.5rem;">
+                <input type="text" id="regUsername" placeholder="Username (letters, numbers, _, -)" minlength="3" autocomplete="username" style="width:100%;padding:0.5rem;margin-bottom:0.5rem;">
+                <input type="email" id="regEmail" placeholder="Email" autocomplete="email" style="width:100%;padding:0.5rem;margin-bottom:0.5rem;">
+                <input type="password" id="regPassword" placeholder="Password (6+ characters)" minlength="6" autocomplete="new-password" style="width:100%;padding:0.5rem;">
                 <button id="registerBtn" style="width:100%;padding:0.5rem;margin-top:0.5rem;background:#28a745;color:white;border:none;border-radius:4px;">Register</button>
                 <div style="margin-top:1rem;text-align:center;"><small><a href="#" id="loginLink">login</a></small></div>
+                <div id="registerError" style="color:red;margin-top:0.5rem;display:none;"></div>
             </div>`);
         document.getElementById('registerBtn')?.addEventListener('click', () => this.handleRegister());
         document.getElementById('loginLink')?.addEventListener('click', (e) => { e.preventDefault(); document.getElementById('registerForm')?.remove(); this.showLoginForm(); });
     }
 
     async handleLogin() {
-        const username = document.getElementById('loginUsername')?.value;
-        const password = document.getElementById('loginPassword')?.value;
-        if (!username || !password) return;
+        const username = document.getElementById('loginUsername')?.value?.trim();
+        const password = document.getElementById('loginPassword')?.value ?? '';
+        const errorDiv = document.getElementById('loginError');
+        if (!username || !password) {
+            if (errorDiv) {
+                errorDiv.textContent = 'Enter username and password.';
+                errorDiv.style.display = 'block';
+            }
+            return;
+        }
+        if (username.length < 3 || password.length < 6) {
+            if (errorDiv) {
+                errorDiv.textContent = 'Username: 3+ characters. Password: 6+ characters.';
+                errorDiv.style.display = 'block';
+            }
+            return;
+        }
+        if (errorDiv) errorDiv.style.display = 'none';
         try {
             const response = await this.apiClient.login(username, password);
             const peerID = `peer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -114,23 +125,76 @@ class RillNetApp {
     }
 
     async handleRegister() {
-        const username = document.getElementById('regUsername')?.value;
-        const email = document.getElementById('regEmail')?.value;
-        const password = document.getElementById('regPassword')?.value;
-        if (!username || !email || !password) return;
+        const username = document.getElementById('regUsername')?.value?.trim();
+        const email = document.getElementById('regEmail')?.value?.trim();
+        const password = document.getElementById('regPassword')?.value ?? '';
+        const errorDiv = document.getElementById('registerError');
+        if (!username || !email || !password) {
+            if (errorDiv) {
+                errorDiv.textContent = 'Fill in all fields.';
+                errorDiv.style.display = 'block';
+            }
+            return;
+        }
+        if (username.length < 3 || password.length < 6) {
+            if (errorDiv) {
+                errorDiv.textContent = 'Username: 3+ characters. Password: 6+ characters.';
+                errorDiv.style.display = 'block';
+            }
+            return;
+        }
+        if (errorDiv) errorDiv.style.display = 'none';
         try {
             await this.apiClient.register(username, email, password);
             this.removeLoginForm();
             this.showLoginForm();
             this.logger.success('Registration successful! Please login.');
         } catch (error) {
+            if (errorDiv) {
+                errorDiv.textContent = error.message;
+                errorDiv.style.display = 'block';
+            }
             this.logger.error('Registration failed: ' + error.message);
         }
     }
 
+    clearSession() {
+        localStorage.removeItem('rillnet_access_token');
+        localStorage.removeItem('rillnet_refresh_token');
+        localStorage.removeItem('rillnet_peer_id');
+        localStorage.removeItem('rillnet_username');
+        this.isAuthenticated = false;
+        this.apiClient.setTokens(null, null);
+        this.signalClient.disconnect();
+    }
+
+    configureSignalAuth() {
+        if (typeof this.signalClient.setTokenProvider === 'function') {
+            this.signalClient.setTokenProvider(() => this.apiClient.ensureAccessToken());
+            return;
+        }
+        throw new Error(
+            'Outdated signal-client.js loaded. Hard refresh the page (Ctrl+F5) and try again.'
+        );
+    }
+
+    async ensureSignalConnected() {
+        if (typeof this.apiClient.ensureAccessToken !== 'function') {
+            throw new Error(
+                'Outdated api-client.js loaded. Hard refresh the page (Ctrl+F5) and try again.'
+            );
+        }
+        await this.apiClient.ensureAccessToken();
+        this.signalClient.setAccessToken(this.apiClient.accessToken);
+        if (!this.signalClient.connected) {
+            await this.signalClient.connect(this.currentPeerID, this.apiClient.accessToken);
+        }
+    }
+
     async initializeAfterAuth() {
-        this.streamManager = new StreamManager(this.signalClient, this.apiClient);
-        await this.signalClient.connect(this.currentPeerID, this.apiClient.accessToken);
+        this.configureSignalAuth();
+        this.streamManager = new StreamManager(this.signalClient, this.apiClient, this.currentPeerID);
+        await this.ensureSignalConnected();
         this.setupSignalHandlers();
         this.initializeUI();
         await this.refreshStreams();
@@ -140,6 +204,11 @@ class RillNetApp {
     setupSignalHandlers() {
         this.signalClient.on('connected', () => this.setConnectionStatus('connected'));
         this.signalClient.on('disconnected', () => this.setConnectionStatus('disconnected'));
+        this.signalClient.on('auth_required', () => {
+            this.logger.error('Session expired. Please log in again.');
+            this.clearSession();
+            this.showLoginForm();
+        });
         this.signalClient.on('offer', (data) => this.streamManager?.handleOffer(data));
         this.signalClient.on('answer', (data) => this.streamManager?.handleAnswer(data));
         this.signalClient.on('ice_candidate', (data) => this.streamManager?.handleICECandidate(data));
@@ -178,9 +247,10 @@ class RillNetApp {
             return;
         }
         if (!this.streamManager) {
-            this.streamManager = new StreamManager(this.signalClient, this.apiClient);
+            this.streamManager = new StreamManager(this.signalClient, this.apiClient, this.currentPeerID);
+            this.configureSignalAuth();
             if (!this.signalClient.connected) {
-                await this.signalClient.connect(this.currentPeerID, this.apiClient.accessToken);
+                await this.ensureSignalConnected();
                 this.setupSignalHandlers();
             }
         }
@@ -192,9 +262,10 @@ class RillNetApp {
             this.currentStreamId = stream.ID || stream.id || streamResponse.ID || streamResponse.id;
             if (!this.currentStreamId) throw new Error('Stream ID not found in response');
             await this.apiClient.joinStream(this.currentStreamId, this.currentPeerID, true, { maxBitrate: 2000, codecs: ['VP8', 'Opus'] });
-            await this.streamManager.startPublisher(this.currentStreamId);
+            await this.streamManager.startPublisher(this.currentStreamId, this.currentPeerID);
             this.signalClient.joinStream(this.currentStreamId, true, { maxBitrate: 2000, codecs: ['VP8', 'Opus'] });
             this.isPublisher = true;
+            sessionStorage.setItem('rillnet_live_stream', this.currentStreamId);
             this.updatePublisherUI(true);
             await this.refreshStreams();
         } catch (error) {
@@ -208,6 +279,7 @@ class RillNetApp {
             if (this.currentStreamId) await this.apiClient.leaveStream(this.currentStreamId, this.currentPeerID);
             this.isPublisher = false;
             this.currentStreamId = null;
+            sessionStorage.removeItem('rillnet_live_stream');
             this.updatePublisherUI(false);
             await this.refreshStreams();
         } catch (error) {
@@ -222,23 +294,56 @@ class RillNetApp {
     async joinStream() {
         if (!this.isAuthenticated) { this.showLoginForm(); return; }
         if (!this.streamManager) {
-            this.streamManager = new StreamManager(this.signalClient, this.apiClient);
+            this.streamManager = new StreamManager(this.signalClient, this.apiClient, this.currentPeerID);
+            this.configureSignalAuth();
             if (!this.signalClient.connected) {
-                await this.signalClient.connect(this.currentPeerID, this.apiClient.accessToken);
+                await this.ensureSignalConnected();
                 this.setupSignalHandlers();
             }
         }
         const selectedStream = document.getElementById('streamList')?.value;
         if (!selectedStream) return;
+        const joinBtn = document.getElementById('joinStream');
+        if (joinBtn?.disabled) return;
+        if (joinBtn) joinBtn.disabled = true;
         try {
+            await this.apiClient.ensureAccessToken();
+            const readiness = await this.apiClient.getWebRTCReadiness(selectedStream);
+            if (!readiness.publisher_ready) {
+                const live = sessionStorage.getItem('rillnet_live_stream');
+                let hint = 'Open a second tab, click Start Publishing on this stream, then Join here.';
+                if (live && live !== selectedStream) {
+                    hint = `Publisher is active on "${live}". Select that stream in the list or publish on "${selectedStream}" first.`;
+                } else if (live === selectedStream) {
+                    hint = 'Publisher was started in another tab but SFU has no media (server may have restarted). Stop and Start Publishing again.';
+                }
+                this.logger.error(`No live WebRTC publisher on stream ${selectedStream}. ${hint}`);
+                return;
+            }
             await this.apiClient.joinStream(selectedStream, this.currentPeerID, false, { maxBitrate: 2000, codecs: ['VP8', 'Opus'] });
             this.signalClient.joinStream(selectedStream, false, { maxBitrate: 2000, codecs: ['VP8', 'Opus'] });
-            await this.streamManager.joinStream(selectedStream);
+            // Let SFU discover any active publisher on this stream (owner from Redis can be stale).
+            let sourcePeers = [];
+            if (this.isPublisher && this.currentStreamId === selectedStream) {
+                sourcePeers = [this.currentPeerID];
+            }
+            await this.streamManager.joinStream(selectedStream, this.currentPeerID, sourcePeers);
             this.isSubscriber = true;
             this.currentStreamId = selectedStream;
             this.updateSubscriberUI(true);
         } catch (error) {
-            this.logger.error('Failed to join stream: ' + error.message);
+            const msg = error.message || '';
+            if (msg.includes('Start publishing') || msg.includes('before joining')) {
+                this.logger.error(
+                    'No live publisher on this stream. Open a second browser tab: tab 1 → Start Publishing on this stream, tab 2 → Join. ' +
+                    'If ingest was restarted, publish again. You cannot view and publish the same stream in one tab.'
+                );
+            } else {
+                this.logger.error('Failed to join stream: ' + msg);
+            }
+        } finally {
+            const joinBtn = document.getElementById('joinStream');
+            if (joinBtn && !this.isSubscriber) joinBtn.disabled = false;
         }
     }
 
@@ -294,7 +399,8 @@ class RillNetApp {
             const option = document.createElement('option');
             option.value = stream.id || stream.stream_id || stream.ID;
             const name = stream.name || `Stream ${option.value}`;
-            option.textContent = `${name} (${stream.peer_count || 0} peers)`;
+            const liveMark = option.value === sessionStorage.getItem('rillnet_live_stream') ? ' [LIVE]' : '';
+            option.textContent = `${name}${liveMark} (${stream.peer_count || 0} peers)`;
             streamList.appendChild(option);
         });
         if (streams.find(s => (s.id || s.stream_id || s.ID) === currentValue)) streamList.value = currentValue;

@@ -81,7 +81,7 @@ rate_limiting:
     max_message_size_bytes: 65536
 
 retry:
-  enabled: true
+  enabled: false
   max_attempts: 3
   initial_delay: 100ms
   max_delay: 5s

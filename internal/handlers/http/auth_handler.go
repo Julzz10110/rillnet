@@ -54,7 +54,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	
 	var req RegisterRequest
 	if err := c.BindJSON(&req); err != nil {
-		reportError(c, errors.NewInvalidInputError("invalid request format"))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_input",
+			"message": err.Error(),
+		})
 		return
 	}
 

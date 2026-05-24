@@ -267,7 +267,11 @@ func TestSFUService_CreateSubscriberOffer(t *testing.T) {
 	sourcePeers := []domain.PeerID{"publisher-1", "publisher-2"}
 
 	t.Run("successful subscriber offer creation", func(t *testing.T) {
-		// Execution
+		for _, pubID := range sourcePeers {
+			_, err := sfuService.CreatePublisherOffer(ctx, pubID, streamID)
+			assert.NoError(t, err)
+		}
+
 		offer, err := sfuService.CreateSubscriberOffer(ctx, peerID, streamID, sourcePeers)
 
 		// Assertions
@@ -281,13 +285,21 @@ func TestSFUService_CreateSubscriberOffer(t *testing.T) {
 		assert.Equal(t, 1, metrics.ActiveSubscribers)
 	})
 
-	t.Run("subscriber offer with empty source peers", func(t *testing.T) {
-		// Execution with empty source list
-		offer, err := sfuService.CreateSubscriberOffer(ctx, peerID, streamID, []domain.PeerID{})
+	t.Run("subscriber offer with empty source peers uses active publisher", func(t *testing.T) {
+		pubPeer := domain.PeerID("publisher-for-empty-sources")
+		_, err := sfuService.CreatePublisherOffer(ctx, pubPeer, streamID)
+		assert.NoError(t, err)
 
-		// Assertions
+		offer, err := sfuService.CreateSubscriberOffer(ctx, domain.PeerID("sub-empty-sources"), streamID, []domain.PeerID{})
 		assert.NoError(t, err)
 		assert.NotNil(t, offer)
+		assert.NotEmpty(t, offer.SDP)
+	})
+
+	t.Run("subscriber offer without publisher returns ErrNoPublisherMedia", func(t *testing.T) {
+		_, err := sfuService.CreateSubscriberOffer(ctx, domain.PeerID("sub-no-publisher"), domain.StreamID("no-publisher-stream"), []domain.PeerID{})
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, domain.ErrNoPublisherMedia)
 	})
 }
 
@@ -362,7 +374,9 @@ func TestSFUService_HandleSubscriberAnswer(t *testing.T) {
 	sourcePeers := []domain.PeerID{"publisher-1"}
 
 	t.Run("successful subscriber answer handling", func(t *testing.T) {
-		// First create subscriber
+		_, err := sfuService.CreatePublisherOffer(ctx, sourcePeers[0], streamID)
+		assert.NoError(t, err)
+
 		offer, err := sfuService.CreateSubscriberOffer(ctx, peerID, streamID, sourcePeers)
 		assert.NoError(t, err)
 		assert.NotNil(t, offer)
@@ -511,7 +525,6 @@ func TestSFUService_ConcurrentOperations(t *testing.T) {
 	streamID := domain.StreamID("test-stream")
 
 	t.Run("concurrent peer operations", func(t *testing.T) {
-		// Start goroutines to create peers
 		done := make(chan bool, 10)
 
 		for i := 0; i < 5; i++ {
@@ -522,7 +535,13 @@ func TestSFUService_ConcurrentOperations(t *testing.T) {
 				assert.NotNil(t, offer)
 				done <- true
 			}(i)
+		}
 
+		for i := 0; i < 5; i++ {
+			<-done
+		}
+
+		for i := 0; i < 5; i++ {
 			go func(index int) {
 				peerID := domain.PeerID(fmt.Sprintf("subscriber-%d", index))
 				offer, err := sfuService.CreateSubscriberOffer(ctx, peerID, streamID, []domain.PeerID{})
@@ -532,8 +551,7 @@ func TestSFUService_ConcurrentOperations(t *testing.T) {
 			}(i)
 		}
 
-		// Wait for all goroutines to complete
-		for i := 0; i < 10; i++ {
+		for i := 0; i < 5; i++ {
 			<-done
 		}
 

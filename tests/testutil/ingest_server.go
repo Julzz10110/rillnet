@@ -133,6 +133,7 @@ func NewIngestTestEnv(t *testing.T, cfg *config.Config) *IngestTestEnv {
 		streamAPI.POST("/:id/join", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.JoinStream)
 		streamAPI.POST("/:id/leave", streamHandler.LeaveStream)
 		streamAPI.GET("/:id/stats", streamHandler.GetStreamStats)
+		streamAPI.GET("/:id/webrtc/ready", streamHandler.GetWebRTCReadiness)
 		streamAPI.POST("/:id/publisher/offer", middleware.StreamPermissionMiddleware(authService, domain.RoleOwner), streamHandler.CreatePublisherOffer)
 		streamAPI.POST("/:id/publisher/answer", middleware.StreamPermissionMiddleware(authService, domain.RoleOwner), streamHandler.HandlePublisherAnswer)
 		streamAPI.POST("/:id/subscriber/offer", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.CreateSubscriberOffer)

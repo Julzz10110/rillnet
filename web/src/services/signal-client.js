@@ -11,14 +11,31 @@ class SignalClient {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.reconnectDelay = 1000;
+        this.tokenProvider = null;
+        this.reconnecting = false;
     }
 
     setAccessToken(token) {
         this.accessToken = token;
     }
 
+    setTokenProvider(provider) {
+        this.tokenProvider = provider;
+    }
+
     setPeerID(peerID) {
         this.peerID = peerID;
+    }
+
+    async resolveAccessToken() {
+        if (this.tokenProvider) {
+            const token = await this.tokenProvider();
+            if (token) {
+                this.accessToken = token;
+            }
+            return this.accessToken;
+        }
+        return this.accessToken;
     }
 
     async connect(peerID, token) {
@@ -31,7 +48,7 @@ class SignalClient {
 
         return new Promise((resolve, reject) => {
             const url = `${this.wsURL}?peer_id=${encodeURIComponent(this.peerID)}&token=${encodeURIComponent(this.accessToken)}`;
-            
+
             try {
                 this.ws = new WebSocket(url);
 
@@ -61,23 +78,44 @@ class SignalClient {
                 this.ws.onclose = (event) => {
                     this.connected = false;
                     this.emit('disconnected', { code: event.code, reason: event.reason });
-                    
-                    // Attempt to reconnect if not a normal closure
-                    if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
-                        this.reconnectAttempts++;
-                        setTimeout(() => {
-                            this.connect(this.peerID, this.accessToken).catch(console.error);
-                        }, this.reconnectDelay * this.reconnectAttempts);
-                    }
-                };
 
+                    if (event.code === 1000 || this.reconnectAttempts >= this.maxReconnectAttempts) {
+                        return;
+                    }
+
+                    this.reconnectAttempts++;
+                    const delay = this.reconnectDelay * this.reconnectAttempts;
+                    setTimeout(() => {
+                        this.scheduleReconnect().catch(console.error);
+                    }, delay);
+                };
             } catch (error) {
                 reject(error);
             }
         });
     }
 
+    async scheduleReconnect() {
+        if (this.reconnecting) {
+            return;
+        }
+        this.reconnecting = true;
+        try {
+            const token = await this.resolveAccessToken();
+            if (!token) {
+                this.emit('auth_required', { message: 'Session expired, please log in again' });
+                return;
+            }
+            await this.connect(this.peerID, token);
+        } catch (error) {
+            this.emit('auth_required', { message: error.message || 'Authentication failed' });
+        } finally {
+            this.reconnecting = false;
+        }
+    }
+
     disconnect() {
+        this.reconnectAttempts = this.maxReconnectAttempts;
         if (this.ws) {
             this.ws.close(1000, 'Client disconnect');
             this.ws = null;
