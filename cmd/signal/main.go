@@ -110,8 +110,11 @@ func main() {
 
 	// Create HTTP server
 	srv := &http.Server{
-		Addr:    cfg.Signal.Address,
-		Handler: mux,
+		Addr:              cfg.Signal.Address,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
 	}
 
 	// Start server in goroutine

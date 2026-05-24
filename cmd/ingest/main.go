@@ -229,10 +229,11 @@ func main() {
 
 	// Create HTTP server with timeouts
 	srv := &http.Server{
-		Addr:         cfg.Server.Address,
-		Handler:      router,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
+		Addr:              cfg.Server.Address,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
 	}
 
 	// Start server in goroutine

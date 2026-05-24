@@ -320,9 +320,14 @@ func Load(configPath string) (*Config, error) {
 		return cfg, nil
 	}
 
-	data, err := os.ReadFile(configPath)
+	safePath, err := validatedConfigPath(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %w", configPath, err)
+		return nil, err
+	}
+
+	data, err := os.ReadFile(safePath) // #nosec G304 -- path validated by validatedConfigPath
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file %s: %w", safePath, err)
 	}
 
 	cfg := DefaultConfig()

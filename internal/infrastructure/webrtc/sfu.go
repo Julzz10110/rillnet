@@ -607,8 +607,10 @@ func (s *SFUService) processRTCPPackets(peerID domain.PeerID, streamID domain.St
 				"stream_id", streamID,
 				"nacks", len(p.Nacks),
 			)
-			// NACK indicates packet loss, increment loss counter
-			totalPacketLoss += uint8(len(p.Nacks))
+			// NACK indicates packet loss, increment loss counter (saturate at 255)
+			for range min(len(p.Nacks), 255-int(totalPacketLoss)) {
+				totalPacketLoss++
+			}
 			packetCount++
 
 		case *rtcp.PictureLossIndication:

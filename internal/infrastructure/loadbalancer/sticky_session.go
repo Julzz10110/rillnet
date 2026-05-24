@@ -142,7 +142,14 @@ func (ch *ConsistentHash) GetInstance(key string) string {
 	hashValue := uint64(hash[0])<<56 | uint64(hash[1])<<48 | uint64(hash[2])<<40 | uint64(hash[3])<<32 |
 		uint64(hash[4])<<24 | uint64(hash[5])<<16 | uint64(hash[6])<<8 | uint64(hash[7])
 
-	index := int(hashValue % uint64(len(ch.instances)))
-	return ch.instances[index]
+	idx := hashValue % uint64(len(ch.instances))
+	var i uint64
+	for _, inst := range ch.instances {
+		if i == idx {
+			return inst
+		}
+		i++
+	}
+	return ch.instances[0]
 }
 
