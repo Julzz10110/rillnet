@@ -49,7 +49,7 @@ func (fs *FileStorage) Save(ctx context.Context, name string, data io.Reader) er
 	if err != nil {
 		return fmt.Errorf("failed to open backup root: %w", err)
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 
 	file, err := root.Create(name)
 	if err != nil {
@@ -129,7 +129,7 @@ func (fs *FileStorage) Delete(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open backup root: %w", err)
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 
 	return root.Remove(name)
 }
