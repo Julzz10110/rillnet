@@ -227,9 +227,15 @@
         </main>
     </div>
 
-    <!-- JavaScript Modules -->
+    <!-- JavaScript Modules - Load in order -->
+    <script src="/src/utils/logger.js"></script>
+    <script src="/src/services/api-client.js"></script>
+    <script src="/src/services/signal-client.js"></script>
+    <script src="/src/services/stream-manager.js"></script>
+    <script src="/src/app.js"></script>
     <script>
-        // Logger Utility
+        // Logger Utility (fallback if not loaded from file)
+        if (typeof Logger === 'undefined') {
         class Logger {
             constructor(prefix = 'App') {
                 this.prefix = prefix;
@@ -1081,9 +1087,24 @@
             }
         }
 
-        // Initialize application
+        }
+        
+        // Initialize application when DOM and scripts are ready
         document.addEventListener('DOMContentLoaded', () => {
-            window.rillNetApp = new RillNetApp();
+            // Wait a bit for all scripts to load
+            setTimeout(() => {
+                if (typeof RillNetApp !== 'undefined') {
+                    window.rillNetApp = new RillNetApp();
+                } else {
+                    console.error('RillNetApp class not found. Make sure all scripts are loaded.');
+                    console.log('Available classes:', {
+                        Logger: typeof Logger !== 'undefined',
+                        APIClient: typeof APIClient !== 'undefined',
+                        SignalClient: typeof SignalClient !== 'undefined',
+                        StreamManager: typeof StreamManager !== 'undefined'
+                    });
+                }
+            }, 100);
         });
     </script>
 </body>
