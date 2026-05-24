@@ -1,6 +1,20 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - rillnet-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   # Web Interface
   rillnet-web:
     image: nginx:alpine
@@ -12,6 +26,9 @@ services:
     networks:
       - rillnet-network
     restart: unless-stopped
+    depends_on:
+      - rillnet-ingest
+      - rillnet-signal
 
   rillnet-ingest:
     build:
@@ -20,16 +37,26 @@ services:
     ports:
       - "8080:8080"
     environment:
+      - RILLNET_CONFIG_PATH=/root/configs/config.yaml
       - RILLNET_LOG_LEVEL=debug
       - RILLNET_SERVER_ADDRESS=:8080
+      - RILLNET_REDIS_ENABLED=true
+      - RILLNET_REDIS_ADDRESS=redis:6379
+      - RILLNET_JWT_SECRET=dev-docker-compose-secret-change-in-production
       - RILLNET_WEB_SERVER=http://rillnet-web
+    volumes:
+      - ./configs/config.dev.yaml:/root/configs/config.yaml:ro
     networks:
       - rillnet-network
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
     restart: unless-stopped
 
   rillnet-signal:
@@ -39,18 +66,28 @@ services:
     ports:
       - "8081:8081"
     environment:
+      - RILLNET_CONFIG_PATH=/root/configs/config.yaml
       - RILLNET_LOG_LEVEL=debug
       - RILLNET_SIGNAL_ADDRESS=:8081
+      - RILLNET_REDIS_ENABLED=true
+      - RILLNET_REDIS_ADDRESS=redis:6379
+      - RILLNET_JWT_SECRET=dev-docker-compose-secret-change-in-production
       - RILLNET_WEB_SERVER=http://rillnet-web
+    volumes:
+      - ./configs/config.dev.yaml:/root/configs/config.yaml:ro
     networks:
       - rillnet-network
     depends_on:
-      - rillnet-ingest
+      redis:
+        condition: service_healthy
+      rillnet-ingest:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
     restart: unless-stopped
 
   prometheus:
@@ -89,6 +126,7 @@ services:
       - prometheus
 
 volumes:
+  redis_data:
   prometheus_data:
   grafana_data:
 

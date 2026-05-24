@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	osignal "os/signal"
@@ -19,27 +20,10 @@ import (
 func main() {
 	startTime := time.Now()
 
-	// Try multiple config paths
-	configPaths := []string{
-		"configs/config.yaml",
-		"./configs/config.yaml",
-		"/root/configs/config.yaml",
-		"config.yaml",
-	}
-
-	var cfg *config.Config
-	var err error
-
-	for _, path := range configPaths {
-		cfg, err = config.Load(path)
-		if err == nil {
-			break
-		}
-	}
-
+	cfg, err := config.LoadResolved()
 	if err != nil {
-		// Fallback to defaults if config cannot be loaded
-		cfg = config.DefaultConfig()
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Initialize logger
@@ -102,10 +86,25 @@ func main() {
 	mux.HandleFunc("/health", wsServer.HealthCheck)
 	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		if err := repoFactory.HealthCheck(ctx); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":       "not_ready",
+				"timestamp":    time.Now(),
+				"dependencies": "unhealthy",
+				"error":        err.Error(),
+			})
+			return
+		}
+
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":    "ready",
-			"timestamp": time.Now(),
-			"uptime":    time.Since(startTime).String(),
+			"status":       "ready",
+			"timestamp":    time.Now(),
+			"uptime":       time.Since(startTime).String(),
+			"dependencies": "ok",
 		})
 	})
 

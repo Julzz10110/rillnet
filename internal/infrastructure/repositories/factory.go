@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"fmt"
 
 	"rillnet/internal/core/ports"
 	"rillnet/internal/infrastructure/repositories/memory"
@@ -36,10 +37,7 @@ func NewRepositoryFactory(cfg *config.Config, logger *zap.SugaredLogger) (*Repos
 			logger,
 		)
 		if err != nil {
-			logger.Warnw("failed to connect to Redis, falling back to memory repositories",
-				"error", err,
-			)
-			factory.useRedis = false
+			return nil, fmt.Errorf("redis is enabled but connection failed: %w", err)
 		} else {
 			factory.redisClient = client
 			logger.Info("using Redis repositories")
