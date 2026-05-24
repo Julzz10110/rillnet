@@ -49,6 +49,9 @@ type RefreshTokenRequest struct {
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
+	// Log that the handler was called
+	c.Header("X-Handler-Called", "true")
+	
 	var req RegisterRequest
 	if err := c.BindJSON(&req); err != nil {
 		c.Error(errors.NewInvalidInputError("invalid request format"))

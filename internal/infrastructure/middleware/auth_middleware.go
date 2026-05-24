@@ -13,6 +13,13 @@ import (
 
 func AuthMiddleware(authService services.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Skip auth middleware for auth endpoints (register, login, refresh)
+		path := c.Request.URL.Path
+		if path == "/api/v1/auth/register" || path == "/api/v1/auth/login" || path == "/api/v1/auth/refresh" {
+			c.Next()
+			return
+		}
+		
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "authorization header required"})
@@ -81,17 +88,17 @@ func StreamPermissionMiddleware(authService services.AuthService, requiredRole d
 		}
 
 		streamID := domain.StreamID(c.Param("id"))
-		if streamID == "" {
+		if streamID == "" || streamID == "undefined" || streamID == "null" {
 			// Try to get from body for POST requests
 			var req struct {
 				StreamID domain.StreamID `json:"stream_id"`
 			}
-			if err := c.ShouldBindJSON(&req); err == nil {
+			if err := c.ShouldBindJSON(&req); err == nil && req.StreamID != "" {
 				streamID = req.StreamID
 			}
 		}
 
-		if streamID == "" {
+		if streamID == "" || streamID == "undefined" || streamID == "null" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "stream_id required"})
 			c.Abort()
 			return
