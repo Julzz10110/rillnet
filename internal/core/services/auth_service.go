@@ -172,7 +172,7 @@ func (s *authService) hasRequiredPermission(userRole, requiredRole domain.UserRo
 }
 
 func (s *authService) GetUserFromContext(ctx context.Context) (domain.UserID, error) {
-	userID, ok := ctx.Value("user_id").(domain.UserID)
+	userID, ok := ctx.Value(domain.UserIDContextKey).(domain.UserID)
 	if !ok {
 		return "", ErrUnauthorized
 	}

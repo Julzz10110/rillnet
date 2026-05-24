@@ -105,7 +105,7 @@ func StreamPermissionMiddleware(authService services.AuthService, requiredRole d
 		}
 
 		// Create context with user_id for auth service
-		ctx := context.WithValue(c.Request.Context(), "user_id", userID)
+		ctx := context.WithValue(c.Request.Context(), domain.UserIDContextKey, userID)
 		if err := authService.CheckStreamPermission(ctx, userID, streamID, requiredRole); err != nil {
 			c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
 			c.Abort()

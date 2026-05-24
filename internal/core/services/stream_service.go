@@ -37,7 +37,7 @@ func NewStreamService(
 func (s *streamService) CreateStream(ctx context.Context, name string, owner domain.PeerID, maxPeers int) (*domain.Stream, error) {
 	// Get user ID from context if available
 	var ownerUserID domain.UserID
-	if userIDVal := ctx.Value("user_id"); userIDVal != nil {
+	if userIDVal := ctx.Value(domain.UserIDContextKey); userIDVal != nil {
 		if userID, ok := userIDVal.(domain.UserID); ok {
 			ownerUserID = userID
 		}

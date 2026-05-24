@@ -194,11 +194,8 @@ func (cb *CircuitBreaker) transitionTo(newState State) {
 	cb.stateChangeTime = time.Now()
 
 	// Reset counters on state change
-	if newState == StateClosed {
-		cb.failureCount = 0
-		cb.successCount = 0
-		cb.halfOpenRequests = 0
-	} else if newState == StateHalfOpen {
+	switch newState {
+	case StateClosed, StateHalfOpen:
 		cb.failureCount = 0
 		cb.successCount = 0
 		cb.halfOpenRequests = 0

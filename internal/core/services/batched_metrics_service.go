@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"rillnet/internal/core/domain"
@@ -13,7 +12,6 @@ import (
 type BatchedMetricsService struct {
 	baseService *MetricsService
 	batcher     *batch.Batcher
-	mu          sync.RWMutex
 }
 
 // MetricsOperation represents a batched metrics update operation

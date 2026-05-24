@@ -55,21 +55,21 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 	}
 
 	if err := c.BindJSON(&req); err != nil {
-		c.Error(errors.NewInvalidInputError("invalid request format"))
+		reportError(c, errors.NewInvalidInputError("invalid request format"))
 		return
 	}
 
 	// Validate input
 	if err := validation.ValidateStreamName(req.Name); err != nil {
-		c.Error(errors.NewInvalidInputError(err.Error()))
+		reportError(c, errors.NewInvalidInputError(err.Error()))
 		return
 	}
 	if err := validation.ValidatePeerID(string(req.Owner)); err != nil {
-		c.Error(errors.NewInvalidInputError(err.Error()))
+		reportError(c, errors.NewInvalidInputError(err.Error()))
 		return
 	}
 	if err := validation.ValidateMaxPeers(req.MaxPeers); err != nil {
-		c.Error(errors.NewInvalidInputError(err.Error()))
+		reportError(c, errors.NewInvalidInputError(err.Error()))
 		return
 	}
 
@@ -77,10 +77,10 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 	stream, err := h.streamService.CreateStream(c.Request.Context(), req.Name, req.Owner, req.MaxPeers)
 	if err != nil {
 		if err == domain.ErrStreamNotFound {
-			c.Error(errors.NewNotFoundError("stream"))
+			reportError(c, errors.NewNotFoundError("stream"))
 			return
 		}
-		c.Error(errors.WrapError(err, errors.ErrCodeInternal, "failed to create stream", 500))
+		reportError(c, errors.WrapError(err, errors.ErrCodeInternal, "failed to create stream", 500))
 		return
 	}
 
@@ -94,17 +94,17 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 
 	// Validate stream ID
 	if err := validation.ValidateStreamID(string(streamID)); err != nil {
-		c.Error(errors.NewInvalidInputError(err.Error()))
+		reportError(c, errors.NewInvalidInputError(err.Error()))
 		return
 	}
 
 	stream, err := h.streamService.GetStream(c.Request.Context(), streamID)
 	if err != nil {
 		if err == domain.ErrStreamNotFound {
-			c.Error(errors.NewNotFoundError("stream"))
+			reportError(c, errors.NewNotFoundError("stream"))
 			return
 		}
-		c.Error(errors.WrapError(err, errors.ErrCodeInternal, "failed to get stream", 500))
+		reportError(c, errors.WrapError(err, errors.ErrCodeInternal, "failed to get stream", 500))
 		return
 	}
 

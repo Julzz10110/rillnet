@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"sync"
 	"time"
 
 	"rillnet/internal/core/domain"
@@ -23,7 +22,6 @@ type meshService struct {
 	// Rebalancing state
 	rebalanceTicker *time.Ticker
 	rebalanceStop   chan struct{}
-	rebalanceMu     sync.RWMutex
 }
 
 func NewMeshService(peerRepo ports.PeerRepository, meshRepo ports.MeshRepository, cfg config.MeshConfig, logger *zap.SugaredLogger) ports.MeshService {

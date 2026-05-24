@@ -32,7 +32,7 @@ func (p *SlicePool) Put(s []interface{}) {
 	// Only put back if capacity is reasonable
 	if cap(s) <= p.size*2 {
 		s = s[:0]
-		p.pool.Put(s)
+		p.pool.Put(s) //nolint:staticcheck // SA6002: reuse slice headers with cleared length
 	}
 }
 
@@ -63,7 +63,7 @@ func (p *StringSlicePool) Get() []string {
 func (p *StringSlicePool) Put(s []string) {
 	if cap(s) <= p.size*2 {
 		s = s[:0]
-		p.pool.Put(s)
+		p.pool.Put(s) //nolint:staticcheck // SA6002: reuse slice headers with cleared length
 	}
 }
 

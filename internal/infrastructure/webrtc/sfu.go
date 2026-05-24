@@ -399,7 +399,7 @@ func (s *SFUService) createPeerConnection() (*webrtc.PeerConnection, error) {
 
 	settingEngine := webrtc.SettingEngine{}
 	if s.config.PortRange.Min > 0 && s.config.PortRange.Max > 0 {
-		settingEngine.SetEphemeralUDPPortRange(s.config.PortRange.Min, s.config.PortRange.Max)
+		_ = settingEngine.SetEphemeralUDPPortRange(s.config.PortRange.Min, s.config.PortRange.Max)
 	}
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
@@ -455,15 +455,16 @@ func (s *SFUService) handlePublisherTrack(peerID domain.PeerID, streamID domain.
 // Global packet buffer pool to reduce allocations
 var packetBufferPool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, 1500) // MTU size
+		b := make([]byte, 1500) // MTU size
+		return &b
 	},
 }
 
 // forwardTrackToSubscribers forwards track to all subscribers
 func (s *SFUService) forwardTrackToSubscribers(forwarder *TrackForwarder, track *webrtc.TrackRemote) {
-	// Get buffer from pool
-	packetBuffer := packetBufferPool.Get().([]byte)
-	defer packetBufferPool.Put(packetBuffer)
+	packetBufferPtr := packetBufferPool.Get().(*[]byte)
+	packetBuffer := *packetBufferPtr
+	defer packetBufferPool.Put(packetBufferPtr)
 
 	rtpPacket := &rtp.Packet{}
 	packetCount := uint16(0)
@@ -668,7 +669,7 @@ func (s *SFUService) handlePeerDisconnect(peerID domain.PeerID) {
 	// Clean up publisher
 	if publisher, exists := s.publishers[peerID]; exists {
 		if publisher.PC != nil {
-			publisher.PC.Close()
+			_ = publisher.PC.Close()
 		}
 		delete(s.publishers, peerID)
 		s.metricsService.DecrementPublisherCount(publisher.StreamID)
@@ -677,7 +678,7 @@ func (s *SFUService) handlePeerDisconnect(peerID domain.PeerID) {
 	// Clean up subscriber
 	if subscriber, exists := s.subscribers[peerID]; exists {
 		if subscriber.PC != nil {
-			subscriber.PC.Close()
+			_ = subscriber.PC.Close()
 		}
 		delete(s.subscribers, peerID)
 		s.metricsService.DecrementSubscriberCount(subscriber.StreamID)
@@ -697,7 +698,7 @@ func (s *SFUService) handlePeerDisconnect(peerID domain.PeerID) {
 			// Close all subscriber connections for this forwarder
 			for subPeerID, subPC := range forwarder.Subscribers {
 				if subPC != nil {
-					subPC.Close()
+					_ = subPC.Close()
 				}
 				delete(forwarder.Subscribers, subPeerID)
 			}

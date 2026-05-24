@@ -31,7 +31,7 @@ func (p *BytePool) Get() []byte {
 func (p *BytePool) Put(b []byte) {
 	// Only put back if it's the right size
 	if cap(b) >= p.size {
-		p.pool.Put(b[:p.size])
+		p.pool.Put(b[:p.size]) //nolint:staticcheck // SA6002: reuse fixed-size slice buffers
 	}
 }
 

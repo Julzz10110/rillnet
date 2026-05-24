@@ -253,7 +253,7 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 	existingConn, isReconnect := s.connections[peerID]
 	if isReconnect && existingConn != nil {
 		// Close old connection
-		existingConn.Close()
+		_ = existingConn.Close()
 		s.logger.Infow("closing old connection for reconnecting peer", "peer_id", peerID)
 	}
 	s.connections[peerID] = conn
@@ -262,9 +262,9 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 	s.logger.Infow("peer connected via WebSocket", "peer_id", peerID, "reconnect", isReconnect)
 
 	// Set read/write deadlines
-	conn.SetReadDeadline(time.Now().Add(s.readTimeout))
+	_ = conn.SetReadDeadline(time.Now().Add(s.readTimeout))
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(s.readTimeout))
+		_ = conn.SetReadDeadline(time.Now().Add(s.readTimeout))
 		return nil
 	})
 
@@ -301,7 +301,7 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 				continue
 			}
 
-			conn.SetReadDeadline(time.Now().Add(s.readTimeout))
+			_ = conn.SetReadDeadline(time.Now().Add(s.readTimeout))
 			messageChan <- msg
 		}
 	}()
@@ -317,7 +317,7 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 
 		case <-pingTicker.C:
 			// Send ping
-			conn.SetWriteDeadline(time.Now().Add(s.writeTimeout))
+			_ = conn.SetWriteDeadline(time.Now().Add(s.writeTimeout))
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				s.logger.Infow("error sending ping", "peer_id", peerID, "error", err)
 				goto cleanup
@@ -685,21 +685,6 @@ func (s *WebSocketServer) validateStreamID(ctx context.Context, streamID domain.
 	return nil
 }
 
-// validatePeerID validates peer ID format and existence
-func (s *WebSocketServer) validatePeerID(ctx context.Context, peerID domain.PeerID) error {
-	if peerID == "" {
-		return fmt.Errorf("peer_id cannot be empty")
-	}
-
-	// Check if peer exists
-	_, err := s.peerRepo.GetByID(ctx, peerID)
-	if err != nil {
-		return fmt.Errorf("peer %s not found: %w", peerID, err)
-	}
-
-	return nil
-}
-
 // determineTargetPeer determines the target peer for message routing
 func (s *WebSocketServer) determineTargetPeer(ctx context.Context, fromPeer domain.PeerID, explicitTarget domain.PeerID, payloadStreamID domain.StreamID, messageStreamID domain.StreamID) (domain.PeerID, error) {
 	// Priority 1: Explicit target peer in payload
@@ -762,7 +747,7 @@ func (s *WebSocketServer) sendError(conn *websocket.Conn, message string) {
 		"type":    "error",
 		"message": message,
 	}
-	conn.WriteJSON(errorMsg)
+	_ = conn.WriteJSON(errorMsg)
 }
 
 func (s *WebSocketServer) HealthCheck(w http.ResponseWriter, r *http.Request) {
@@ -777,7 +762,7 @@ func (s *WebSocketServer) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func (s *WebSocketServer) BroadcastToStream(streamID domain.StreamID, message interface{}) error {
@@ -843,7 +828,7 @@ func (s *WebSocketServer) Shutdown(ctx context.Context) error {
 	go func() {
 		for peerID, conn := range connections {
 			// Send close message
-			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"))
 
 			// Close connection

@@ -54,7 +54,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	
 	var req RegisterRequest
 	if err := c.BindJSON(&req); err != nil {
-		c.Error(errors.NewInvalidInputError("invalid request format"))
+		reportError(c, errors.NewInvalidInputError("invalid request format"))
 		return
 	}
 
@@ -63,15 +63,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	// Validate input
 	if err := validation.ValidateUsername(req.Username); err != nil {
-		c.Error(errors.NewInvalidInputError(err.Error()))
+		reportError(c, errors.NewInvalidInputError(err.Error()))
 		return
 	}
 	if err := validation.ValidateEmail(req.Email); err != nil {
-		c.Error(errors.NewInvalidInputError(err.Error()))
+		reportError(c, errors.NewInvalidInputError(err.Error()))
 		return
 	}
 	if err := validation.ValidatePassword(req.Password); err != nil {
-		c.Error(errors.NewInvalidInputError(err.Error()))
+		reportError(c, errors.NewInvalidInputError(err.Error()))
 		return
 	}
 
