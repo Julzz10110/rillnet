@@ -76,6 +76,14 @@ func NewHTTPRateLimitMiddleware(cfg *config.Config) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
+		// Skip rate limiting for health check, metrics and auth endpoints
+		path := c.Request.URL.Path
+		if path == "/health" || path == "/ready" || path == "/metrics" ||
+			path == "/api/v1/auth/register" || path == "/api/v1/auth/login" || path == "/api/v1/auth/refresh" {
+			c.Next()
+			return
+		}
+
 		// Global concurrent requests throttling
 		if globalSem != nil {
 			select {
@@ -101,5 +109,3 @@ func NewHTTPRateLimitMiddleware(cfg *config.Config) gin.HandlerFunc {
 		c.Next()
 	}
 }
-
-
