@@ -83,8 +83,20 @@ func NewIngestTestEnv(t *testing.T, cfg *config.Config) *IngestTestEnv {
 		MaxBitrate: cfg.WebRTC.MaxBitrate,
 	}
 
-	retryCfg := retry.Config{Enabled: cfg.Retry.Enabled}
-	cbCfg := circuitbreaker.Config{FailureThreshold: cfg.CircuitBreaker.FailureThreshold}
+	retryCfg := retry.Config{
+		Enabled:      cfg.Retry.Enabled,
+		MaxAttempts:  cfg.Retry.MaxAttempts,
+		InitialDelay: cfg.Retry.InitialDelay,
+		MaxDelay:     cfg.Retry.MaxDelay,
+		Multiplier:   cfg.Retry.Multiplier,
+		Jitter:       cfg.Retry.Jitter,
+	}
+	cbCfg := circuitbreaker.Config{
+		FailureThreshold:    cfg.CircuitBreaker.FailureThreshold,
+		SuccessThreshold:    cfg.CircuitBreaker.SuccessThreshold,
+		Timeout:             cfg.CircuitBreaker.Timeout,
+		MaxRequestsHalfOpen: cfg.CircuitBreaker.MaxRequestsHalfOpen,
+	}
 	sfuService := webrtcinfra.NewSFUService(webrtcConfig, qualityService, metricsService, meshService, retryCfg, cbCfg)
 
 	authHandler := httphandlers.NewAuthHandler(authService)

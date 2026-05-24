@@ -13,6 +13,7 @@ import (
 	"rillnet/pkg/retry"
 	rlog "rillnet/pkg/logger"
 
+	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
@@ -392,6 +393,16 @@ func (s *SFUService) handleSubscriberAnswerInternal(ctx context.Context, peerID 
 
 // createPeerConnection creates a new WebRTC connection
 func (s *SFUService) createPeerConnection() (*webrtc.PeerConnection, error) {
+	mediaEngine := &webrtc.MediaEngine{}
+	if err := mediaEngine.RegisterDefaultCodecs(); err != nil {
+		return nil, fmt.Errorf("register default codecs: %w", err)
+	}
+
+	interceptorRegistry := &interceptor.Registry{}
+	if err := webrtc.RegisterDefaultInterceptors(mediaEngine, interceptorRegistry); err != nil {
+		return nil, fmt.Errorf("register default interceptors: %w", err)
+	}
+
 	config := webrtc.Configuration{
 		ICEServers:   s.config.ICEServers,
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlanWithFallback,
@@ -402,7 +413,11 @@ func (s *SFUService) createPeerConnection() (*webrtc.PeerConnection, error) {
 		_ = settingEngine.SetEphemeralUDPPortRange(s.config.PortRange.Min, s.config.PortRange.Max)
 	}
 
-	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
+	api := webrtc.NewAPI(
+		webrtc.WithMediaEngine(mediaEngine),
+		webrtc.WithInterceptorRegistry(interceptorRegistry),
+		webrtc.WithSettingEngine(settingEngine),
+	)
 	return api.NewPeerConnection(config)
 }
 
