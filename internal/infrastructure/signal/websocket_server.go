@@ -224,7 +224,7 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 		s.logger.Errorw("websocket upgrade failed", "error", err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Apply max message size limit
 	if s.maxMsgSize > 0 {

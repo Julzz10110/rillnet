@@ -5,9 +5,6 @@ run:
 
 linters:
   default: standard
-  settings:
-    errcheck:
-      check-defer: false
   exclusions:
     paths:
       - ^examples/

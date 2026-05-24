@@ -39,7 +39,7 @@ func main() {
 
 	// Initialize logger
 	zapLogger := logger.New(cfg.Logging.Level)
-	defer zapLogger.Sync()
+	defer func() { _ = zapLogger.Sync() }()
 
 	log := zapLogger.Sugar()
 
@@ -48,7 +48,7 @@ func main() {
 	if err != nil {
 		log.Fatalw("failed to create repository factory", "error", err)
 	}
-	defer repoFactory.Close()
+	defer func() { _ = repoFactory.Close() }()
 
 	// Initialize repositories
 	streamRepo := repoFactory.CreateStreamRepository()

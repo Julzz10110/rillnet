@@ -70,7 +70,7 @@ func (bs *BackupService) RestoreBackup(ctx context.Context, name string) (*Backu
 	if err != nil {
 		return nil, fmt.Errorf("failed to load backup: %w", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Read data
 	data, err := io.ReadAll(reader)

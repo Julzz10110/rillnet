@@ -34,7 +34,7 @@ func (fs *FileStorage) Save(ctx context.Context, name string, data io.Reader) er
 	if err != nil {
 		return fmt.Errorf("failed to create backup file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Copy data
 	if _, err := io.Copy(file, data); err != nil {

@@ -87,7 +87,7 @@ func (eb *EventBus) Subscribe(ctx context.Context, handler func(*Event) error) e
 	}
 
 	eb.pubsub = eb.client.Subscribe(ctx, eb.channels...)
-	defer eb.pubsub.Close()
+	defer func() { _ = eb.pubsub.Close() }()
 
 	ch := eb.pubsub.Channel()
 
