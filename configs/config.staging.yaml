@@ -1,4 +1,4 @@
-# Production profile template — inject secrets via env / K8s Secrets / Vault
+# Staging profile — use with secrets from environment / secret store (not committed)
 
 server:
   address: ":8080"
@@ -16,9 +16,6 @@ webrtc:
   ice_servers:
     - urls:
         - "stun:stun.l.google.com:19302"
-    # - urls: ["turn:turn.example.com:3478"]
-    #   username: "SET_VIA_SECRET"
-    #   credential: "SET_VIA_SECRET"
   port_range:
     min: 50000
     max: 60000
@@ -43,9 +40,9 @@ monitoring:
 
 tracing:
   enabled: false
-  service_name: "rillnet"
-  environment: "production"
-  sample_rate: 0.05
+  service_name: "rillnet-staging"
+  environment: "staging"
+  sample_rate: 0.1
 
 logging:
   level: "info"
@@ -56,26 +53,26 @@ redis:
   address: "redis:6379"
   password: ""
   db: 0
-  pool_size: 50
+  pool_size: 20
 
 auth:
   jwt_secret: "SET_VIA_RILLNET_JWT_SECRET"
   access_token_ttl: 15m
   refresh_token_ttl: 168h
   allowed_origins:
-    - "https://app.example.com"
+    - "https://staging.example.com"
 
 rate_limiting:
   enabled: true
   http:
-    requests_per_second: 20
-    burst: 40
-    max_concurrent: 500
+    requests_per_second: 30
+    burst: 60
+    max_concurrent: 0
   websocket:
-    connections_per_minute: 30
-    messages_per_second: 50
-    burst: 100
-    max_concurrent_connections: 10000
+    connections_per_minute: 40
+    messages_per_second: 80
+    burst: 160
+    max_concurrent_connections: 0
     max_message_size_bytes: 65536
 
 retry:

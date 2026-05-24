@@ -1,0 +1,101 @@
+# Development / Docker Compose profile
+# Mount as configs/config.yaml in containers or set RILLNET_CONFIG_PATH=configs/config.dev.yaml
+
+server:
+  address: ":8080"
+  read_timeout: 30s
+  write_timeout: 30s
+  shutdown_timeout: 30s
+
+signal:
+  address: ":8081"
+  ping_interval: 30s
+  pong_timeout: 60s
+  shutdown_timeout: 30s
+
+webrtc:
+  ice_servers:
+    - urls:
+        - "stun:stun.l.google.com:19302"
+        - "stun:stun1.l.google.com:19302"
+  port_range:
+    min: 50000
+    max: 60000
+  simulcast: true
+  max_bitrate: 5000
+
+mesh:
+  max_connections: 4
+  min_connections: 2
+  max_connections_per_peer: 8
+  health_check_interval: 10s
+  reconnect_attempts: 3
+  rebalance_interval: 30s
+  latency_weight: 0.4
+  bandwidth_weight: 0.4
+  reliability_weight: 0.2
+
+monitoring:
+  prometheus_enabled: true
+  prometheus_port: 9090
+  metrics_interval: 30s
+
+tracing:
+  enabled: false
+  service_name: "rillnet"
+  jaeger_url: "http://localhost:14268/api/traces"
+  environment: "development"
+  sample_rate: 1.0
+
+logging:
+  level: "debug"
+  format: "json"
+
+redis:
+  enabled: true
+  # Docker Compose overrides via RILLNET_REDIS_ADDRESS=redis:6379
+  address: "localhost:6379"
+  password: ""
+  db: 0
+  pool_size: 10
+
+auth:
+  jwt_secret: "dev-only-change-via-RILLNET_JWT_SECRET"
+  access_token_ttl: 15m
+  refresh_token_ttl: 168h
+  allowed_origins:
+    - "http://localhost"
+    - "http://127.0.0.1"
+
+rate_limiting:
+  enabled: true
+  http:
+    requests_per_second: 50
+    burst: 100
+    max_concurrent: 0
+  websocket:
+    connections_per_minute: 60
+    messages_per_second: 100
+    burst: 200
+    max_concurrent_connections: 0
+    max_message_size_bytes: 65536
+
+retry:
+  enabled: true
+  max_attempts: 3
+  initial_delay: 100ms
+  max_delay: 5s
+  multiplier: 2.0
+  jitter: true
+
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  success_threshold: 2
+  timeout: 30s
+  max_requests_half_open: 3
+
+distributed:
+  instance_id: ""
+  lock_ttl: 30s
+  peer_registry_ttl: 5m

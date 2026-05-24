@@ -53,6 +53,7 @@ logging:
   level: "info"
   format: "json"
 
+# For Redis-backed dev: use configs/config.dev.yaml or Docker Compose
 redis:
   enabled: false
   address: "localhost:6379"

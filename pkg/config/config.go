@@ -438,4 +438,18 @@ func (c *Config) applyEnvOverrides() {
 	if secret := os.Getenv("RILLNET_JWT_SECRET"); secret != "" {
 		c.Auth.JWTSecret = secret
 	}
+	if v := os.Getenv("RILLNET_REDIS_ENABLED"); v != "" {
+		switch v {
+		case "1", "true", "TRUE", "yes", "YES":
+			c.Redis.Enabled = true
+		case "0", "false", "FALSE", "no", "NO":
+			c.Redis.Enabled = false
+		}
+	}
+	if addr := os.Getenv("RILLNET_REDIS_ADDRESS"); addr != "" {
+		c.Redis.Address = addr
+	}
+	if password := os.Getenv("RILLNET_REDIS_PASSWORD"); password != "" {
+		c.Redis.Password = password
+	}
 }
