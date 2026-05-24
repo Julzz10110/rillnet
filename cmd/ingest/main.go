@@ -31,27 +31,10 @@ import (
 func main() {
 	startTime := time.Now()
 
-	// Try multiple config paths
-	configPaths := []string{
-		"configs/config.yaml",
-		"./configs/config.yaml",
-		"/root/configs/config.yaml",
-		"config.yaml",
-	}
-
-	var cfg *config.Config
-	var err error
-
-	for _, path := range configPaths {
-		cfg, err = config.Load(path)
-		if err == nil {
-			break
-		}
-	}
-
+	cfg, err := config.LoadResolved()
 	if err != nil {
-		// Fallback to defaults if config cannot be loaded
-		cfg = config.DefaultConfig()
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Initialize logger
@@ -150,8 +133,7 @@ func main() {
 	sfuService := webrtcinfra.NewSFUService(webrtcConfig, qualityService, metricsService, meshService, retryCfg, cbCfg)
 
 	// Initialize monitoring
-	prometheusCollector := monitoring.NewPrometheusCollector()
-	fmt.Print("Prometheus Collector:", prometheusCollector)
+	_ = monitoring.NewPrometheusCollector()
 
 	// Initialize HTTP handlers
 	authHandler := httphandlers.NewAuthHandler(authService)
@@ -163,31 +145,23 @@ func main() {
 	}
 	router := gin.Default()
 
-	// Global HTTP rate limiting (if enabled)
-	router.Use(middleware.NewHTTPRateLimitMiddleware(cfg))
-
-	// Setup auth routes (public)
-	authHandler.SetupRoutes(router)
-
-	// Setup stream routes with authentication
-	api := router.Group("/api/v1")
-	api.Use(middleware.AuthMiddleware(authService))
-	{
-		api.POST("/streams", streamHandler.CreateStream)
-		api.GET("/streams/:id", streamHandler.GetStream)
-		api.POST("/streams/:id/join", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.JoinStream)
-		api.POST("/streams/:id/leave", streamHandler.LeaveStream)
-		api.GET("/streams/:id/stats", streamHandler.GetStreamStats)
-		api.GET("/streams", streamHandler.ListStreams)
-
-		// WebRTC endpoints
-		api.POST("/streams/:id/publisher/offer", middleware.StreamPermissionMiddleware(authService, domain.RoleOwner), streamHandler.CreatePublisherOffer)
-		api.POST("/streams/:id/publisher/answer", middleware.StreamPermissionMiddleware(authService, domain.RoleOwner), streamHandler.HandlePublisherAnswer)
-		api.POST("/streams/:id/subscriber/offer", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.CreateSubscriberOffer)
-		api.POST("/streams/:id/subscriber/answer", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.HandleSubscriberAnswer)
+	// CORS middleware (must be first)
+	if len(cfg.Auth.AllowedOrigins) > 0 {
+		router.Use(middleware.CORSMiddleware(cfg.Auth.AllowedOrigins))
+	} else {
+		// Allow all origins for development if not configured
+		router.Use(middleware.SimpleCORSMiddleware())
 	}
 
-	// Health check endpoint
+	// Setup auth routes FIRST (public) - before any other middleware that might interfere
+	// Register directly on router to avoid any group conflicts
+	log.Info("Registering auth routes directly on router...")
+	router.POST("/api/v1/auth/register", authHandler.Register)
+	router.POST("/api/v1/auth/login", authHandler.Login)
+	router.POST("/api/v1/auth/refresh", authHandler.RefreshToken)
+	log.Info("Auth routes registered: /api/v1/auth/register, /api/v1/auth/login, /api/v1/auth/refresh")
+
+	// Health check endpoint (must be before rate limiting)
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"status":    "healthy",
@@ -195,8 +169,11 @@ func main() {
 			"uptime":    time.Since(startTime).String(),
 		})
 	})
+	router.OPTIONS("/health", func(c *gin.Context) {
+		c.Status(204)
+	})
 
-	// Readiness endpoint (can be extended with real dependency checks)
+	// Readiness endpoint (must be before rate limiting)
 	router.GET("/ready", func(c *gin.Context) {
 		// Check repository health (Redis connection if enabled)
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
@@ -218,11 +195,36 @@ func main() {
 			"dependencies": "ok",
 		})
 	})
+	router.OPTIONS("/ready", func(c *gin.Context) {
+		c.Status(204)
+	})
 
-	// Prometheus metrics endpoint
+	// Prometheus metrics endpoint (must be before rate limiting)
 	if cfg.Monitoring.PrometheusEnabled {
 		router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 		log.Info("Prometheus metrics enabled")
+	}
+
+	// Global HTTP rate limiting (if enabled) - applied after health/metrics/auth endpoints
+	router.Use(middleware.NewHTTPRateLimitMiddleware(cfg))
+
+	// Setup stream routes with authentication
+	// Register stream routes directly with full path to avoid conflicts with auth routes
+	streamAPI := router.Group("/api/v1/streams")
+	streamAPI.Use(middleware.AuthMiddleware(authService))
+	{
+		streamAPI.POST("", streamHandler.CreateStream)
+		streamAPI.GET("", streamHandler.ListStreams)
+		streamAPI.GET("/:id", streamHandler.GetStream)
+		streamAPI.POST("/:id/join", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.JoinStream)
+		streamAPI.POST("/:id/leave", streamHandler.LeaveStream)
+		streamAPI.GET("/:id/stats", streamHandler.GetStreamStats)
+
+		// WebRTC endpoints
+		streamAPI.POST("/:id/publisher/offer", middleware.StreamPermissionMiddleware(authService, domain.RoleOwner), streamHandler.CreatePublisherOffer)
+		streamAPI.POST("/:id/publisher/answer", middleware.StreamPermissionMiddleware(authService, domain.RoleOwner), streamHandler.HandlePublisherAnswer)
+		streamAPI.POST("/:id/subscriber/offer", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.CreateSubscriberOffer)
+		streamAPI.POST("/:id/subscriber/answer", middleware.StreamPermissionMiddleware(authService, domain.RoleViewer), streamHandler.HandleSubscriberAnswer)
 	}
 
 	// Create HTTP server with timeouts
