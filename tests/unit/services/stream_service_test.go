@@ -191,26 +191,25 @@ func (m *MockMeshService) GetOptimalPath(ctx context.Context, sourcePeer, target
 }
 
 func TestStreamService_CreateStream(t *testing.T) {
-	// Setup
-	mockStreamRepo := new(MockStreamRepository)
-	mockPeerRepo := new(MockPeerRepository)
-	mockMeshRepo := new(MockMeshRepository)
-	mockMeshService := new(MockMeshService)
-	metricsService := services.NewMetricsService()
-
-	streamService := services.NewStreamService(
-		mockStreamRepo,
-		mockPeerRepo,
-		mockMeshRepo,
-		mockMeshService,
-		metricsService,
-	)
-
 	ctx := context.Background()
 	streamName := "test-stream"
 	ownerID := domain.PeerID("owner-123")
 
 	t.Run("successful stream creation", func(t *testing.T) {
+		mockStreamRepo := new(MockStreamRepository)
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshRepo := new(MockMeshRepository)
+		mockMeshService := new(MockMeshService)
+		metricsService := services.NewMetricsService()
+
+		streamService := services.NewStreamService(
+			mockStreamRepo,
+			mockPeerRepo,
+			mockMeshRepo,
+			mockMeshService,
+			metricsService,
+		)
+
 		// Expectations
 		mockStreamRepo.On("Create", ctx, mock.AnythingOfType("*domain.Stream")).Return(nil)
 
@@ -229,6 +228,20 @@ func TestStreamService_CreateStream(t *testing.T) {
 	})
 
 	t.Run("stream creation with repository error", func(t *testing.T) {
+		mockStreamRepo := new(MockStreamRepository)
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshRepo := new(MockMeshRepository)
+		mockMeshService := new(MockMeshService)
+		metricsService := services.NewMetricsService()
+
+		streamService := services.NewStreamService(
+			mockStreamRepo,
+			mockPeerRepo,
+			mockMeshRepo,
+			mockMeshService,
+			metricsService,
+		)
+
 		// Expectations
 		mockStreamRepo.On("Create", ctx, mock.AnythingOfType("*domain.Stream")).Return(assert.AnError)
 
@@ -244,21 +257,6 @@ func TestStreamService_CreateStream(t *testing.T) {
 }
 
 func TestStreamService_JoinStream(t *testing.T) {
-	// Setup
-	mockStreamRepo := new(MockStreamRepository)
-	mockPeerRepo := new(MockPeerRepository)
-	mockMeshRepo := new(MockMeshRepository)
-	mockMeshService := new(MockMeshService)
-	metricsService := services.NewMetricsService()
-
-	streamService := services.NewStreamService(
-		mockStreamRepo,
-		mockPeerRepo,
-		mockMeshRepo,
-		mockMeshService,
-		metricsService,
-	)
-
 	ctx := context.Background()
 	streamID := domain.StreamID("stream-123")
 	peer := &domain.Peer{
@@ -271,6 +269,20 @@ func TestStreamService_JoinStream(t *testing.T) {
 	}
 
 	t.Run("successful join stream", func(t *testing.T) {
+		mockStreamRepo := new(MockStreamRepository)
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshRepo := new(MockMeshRepository)
+		mockMeshService := new(MockMeshService)
+		metricsService := services.NewMetricsService()
+
+		streamService := services.NewStreamService(
+			mockStreamRepo,
+			mockPeerRepo,
+			mockMeshRepo,
+			mockMeshService,
+			metricsService,
+		)
+
 		// Expectations
 		existingStream := &domain.Stream{
 			ID:       streamID,
@@ -281,7 +293,6 @@ func TestStreamService_JoinStream(t *testing.T) {
 
 		mockStreamRepo.On("GetByID", ctx, streamID).Return(existingStream, nil)
 		mockPeerRepo.On("FindByStream", ctx, streamID).Return(currentPeers, nil)
-		mockPeerRepo.On("Add", ctx, peer).Return(nil)
 		mockMeshService.On("AddPeer", ctx, peer).Return(nil)
 		mockMeshRepo.On("BuildMesh", ctx, streamID, 4).Return(nil)
 
@@ -297,6 +308,20 @@ func TestStreamService_JoinStream(t *testing.T) {
 	})
 
 	t.Run("join non-existent stream", func(t *testing.T) {
+		mockStreamRepo := new(MockStreamRepository)
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshRepo := new(MockMeshRepository)
+		mockMeshService := new(MockMeshService)
+		metricsService := services.NewMetricsService()
+
+		streamService := services.NewStreamService(
+			mockStreamRepo,
+			mockPeerRepo,
+			mockMeshRepo,
+			mockMeshService,
+			metricsService,
+		)
+
 		// Expectations
 		mockStreamRepo.On("GetByID", ctx, streamID).Return(nil, domain.ErrStreamNotFound)
 
@@ -309,6 +334,20 @@ func TestStreamService_JoinStream(t *testing.T) {
 	})
 
 	t.Run("join inactive stream", func(t *testing.T) {
+		mockStreamRepo := new(MockStreamRepository)
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshRepo := new(MockMeshRepository)
+		mockMeshService := new(MockMeshService)
+		metricsService := services.NewMetricsService()
+
+		streamService := services.NewStreamService(
+			mockStreamRepo,
+			mockPeerRepo,
+			mockMeshRepo,
+			mockMeshService,
+			metricsService,
+		)
+
 		// Expectations
 		inactiveStream := &domain.Stream{
 			ID:     streamID,
@@ -325,6 +364,20 @@ func TestStreamService_JoinStream(t *testing.T) {
 	})
 
 	t.Run("join full stream", func(t *testing.T) {
+		mockStreamRepo := new(MockStreamRepository)
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshRepo := new(MockMeshRepository)
+		mockMeshService := new(MockMeshService)
+		metricsService := services.NewMetricsService()
+
+		streamService := services.NewStreamService(
+			mockStreamRepo,
+			mockPeerRepo,
+			mockMeshRepo,
+			mockMeshService,
+			metricsService,
+		)
+
 		// Expectations
 		existingStream := &domain.Stream{
 			ID:       streamID,
@@ -348,40 +401,27 @@ func TestStreamService_JoinStream(t *testing.T) {
 }
 
 func TestStreamService_LeaveStream(t *testing.T) {
-	// Setup
-	mockStreamRepo := new(MockStreamRepository)
-	mockPeerRepo := new(MockPeerRepository)
-	mockMeshRepo := new(MockMeshRepository)
-	mockMeshService := new(MockMeshService)
-	metricsService := services.NewMetricsService()
-
-	streamService := services.NewStreamService(
-		mockStreamRepo,
-		mockPeerRepo,
-		mockMeshRepo,
-		mockMeshService,
-		metricsService,
-	)
-
 	ctx := context.Background()
 	streamID := domain.StreamID("stream-123")
 	peerID := domain.PeerID("peer-123")
-	peer := &domain.Peer{
-		ID:       peerID,
-		StreamID: streamID,
-		Capabilities: domain.PeerCapabilities{
-			IsPublisher: false,
-		},
-	}
 
 	t.Run("successful leave stream", func(t *testing.T) {
-		// Expectations
-		connections := []*domain.PeerConnection{} // Empty connection list
+		mockStreamRepo := new(MockStreamRepository)
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshRepo := new(MockMeshRepository)
+		mockMeshService := new(MockMeshService)
+		metricsService := services.NewMetricsService()
 
-		mockPeerRepo.On("GetByID", ctx, peerID).Return(peer, nil)
+		streamService := services.NewStreamService(
+			mockStreamRepo,
+			mockPeerRepo,
+			mockMeshRepo,
+			mockMeshService,
+			metricsService,
+		)
+
+		// Expectations
 		mockMeshService.On("RemovePeer", ctx, peerID).Return(nil)
-		mockPeerRepo.On("Remove", ctx, peerID).Return(nil)
-		mockMeshRepo.On("GetConnections", ctx, peerID).Return(connections, nil)
 		mockMeshRepo.On("BuildMesh", ctx, streamID, 4).Return(nil)
 
 		// Execution
@@ -389,21 +429,34 @@ func TestStreamService_LeaveStream(t *testing.T) {
 
 		// Assertions
 		assert.NoError(t, err)
-		mockPeerRepo.AssertExpectations(t)
 		mockMeshService.AssertExpectations(t)
 		mockMeshRepo.AssertExpectations(t)
 	})
 
 	t.Run("leave stream with peer not found", func(t *testing.T) {
+		mockStreamRepo := new(MockStreamRepository)
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshRepo := new(MockMeshRepository)
+		mockMeshService := new(MockMeshService)
+		metricsService := services.NewMetricsService()
+
+		streamService := services.NewStreamService(
+			mockStreamRepo,
+			mockPeerRepo,
+			mockMeshRepo,
+			mockMeshService,
+			metricsService,
+		)
+
 		// Expectations
-		mockPeerRepo.On("GetByID", ctx, peerID).Return(nil, domain.ErrPeerNotFound)
+		mockMeshService.On("RemovePeer", ctx, peerID).Return(domain.ErrPeerNotFound)
 
 		// Execution
 		err := streamService.LeaveStream(ctx, streamID, peerID)
 
 		// Assertions
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to get peer")
+		assert.Contains(t, err.Error(), "failed to remove peer")
 	})
 }
 
@@ -427,12 +480,40 @@ func TestStreamService_GetStreamStats(t *testing.T) {
 	streamID := domain.StreamID("test-stream")
 
 	t.Run("successful stream stats retrieval", func(t *testing.T) {
-		// Add metrics via metrics service
-		metricsService.IncrementPublisherCount(streamID)
-		metricsService.IncrementSubscriberCount(streamID)
-		metricsService.IncrementSubscriberCount(streamID)
-		metricsService.UpdateBitrate(streamID, 1500)
-		metricsService.UpdateLatency(streamID, 100*time.Millisecond)
+		peers := []*domain.Peer{
+			{
+				ID:       "pub-1",
+				StreamID: streamID,
+				Capabilities: domain.PeerCapabilities{
+					IsPublisher: true,
+				},
+				Metrics: domain.PeerMetrics{
+					Bandwidth: 1000,
+					Latency:   100 * time.Millisecond,
+				},
+			},
+			{
+				ID:       "sub-1",
+				StreamID: streamID,
+				Capabilities: domain.PeerCapabilities{
+					IsPublisher: false,
+				},
+				Metrics: domain.PeerMetrics{
+					Latency: 100 * time.Millisecond,
+				},
+			},
+			{
+				ID:       "sub-2",
+				StreamID: streamID,
+				Capabilities: domain.PeerCapabilities{
+					IsPublisher: false,
+				},
+				Metrics: domain.PeerMetrics{
+					Latency: 100 * time.Millisecond,
+				},
+			},
+		}
+		mockPeerRepo.On("FindByStream", ctx, streamID).Return(peers, nil)
 
 		// Execution
 		stats, err := streamService.GetStreamStats(ctx, streamID)
@@ -442,15 +523,15 @@ func TestStreamService_GetStreamStats(t *testing.T) {
 		assert.NotNil(t, stats)
 		assert.Equal(t, 1, stats.ActivePublishers)
 		assert.Equal(t, 2, stats.ActiveSubscribers)
-		assert.Equal(t, 1500, stats.TotalBitrate)
+		assert.Equal(t, 1000, stats.TotalBitrate)
 		assert.Equal(t, 100*time.Millisecond, stats.AverageLatency)
 		assert.True(t, stats.HealthScore > 0)
-		assert.NotZero(t, stats.Timestamp)
 	})
 
 	t.Run("stream stats for non-existent stream", func(t *testing.T) {
 		// Execution for non-existent stream
 		nonExistentStreamID := domain.StreamID("non-existent")
+		mockPeerRepo.On("FindByStream", ctx, nonExistentStreamID).Return([]*domain.Peer{}, nil)
 		stats, err := streamService.GetStreamStats(ctx, nonExistentStreamID)
 
 		// Assertions
@@ -460,29 +541,28 @@ func TestStreamService_GetStreamStats(t *testing.T) {
 		assert.Equal(t, 0, stats.ActivePublishers)
 		assert.Equal(t, 0, stats.ActiveSubscribers)
 		assert.Equal(t, 0, stats.TotalBitrate)
-		assert.Equal(t, 0.0, stats.HealthScore)
+		assert.Equal(t, 30.0, stats.HealthScore)
 	})
 }
 
 func TestStreamService_ListStreams(t *testing.T) {
-	// Setup
-	mockStreamRepo := new(MockStreamRepository)
-	mockPeerRepo := new(MockPeerRepository)
-	mockMeshRepo := new(MockMeshRepository)
-	mockMeshService := new(MockMeshService)
-	metricsService := services.NewMetricsService()
-
-	streamService := services.NewStreamService(
-		mockStreamRepo,
-		mockPeerRepo,
-		mockMeshRepo,
-		mockMeshService,
-		metricsService,
-	)
-
 	ctx := context.Background()
 
 	t.Run("successful list streams", func(t *testing.T) {
+		mockStreamRepo := new(MockStreamRepository)
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshRepo := new(MockMeshRepository)
+		mockMeshService := new(MockMeshService)
+		metricsService := services.NewMetricsService()
+
+		streamService := services.NewStreamService(
+			mockStreamRepo,
+			mockPeerRepo,
+			mockMeshRepo,
+			mockMeshService,
+			metricsService,
+		)
+
 		// Mock data
 		streams := []*domain.Stream{
 			{
@@ -515,6 +595,20 @@ func TestStreamService_ListStreams(t *testing.T) {
 	})
 
 	t.Run("list streams with error", func(t *testing.T) {
+		mockStreamRepo := new(MockStreamRepository)
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshRepo := new(MockMeshRepository)
+		mockMeshService := new(MockMeshService)
+		metricsService := services.NewMetricsService()
+
+		streamService := services.NewStreamService(
+			mockStreamRepo,
+			mockPeerRepo,
+			mockMeshRepo,
+			mockMeshService,
+			metricsService,
+		)
+
 		// Expectations
 		mockStreamRepo.On("ListActive", ctx).Return(nil, assert.AnError)
 

@@ -185,17 +185,16 @@ func createTestAuthService() *MockAuthService {
 }
 
 func TestWebSocketServer_HandleJoinStream(t *testing.T) {
-	mockPeerRepo := new(MockPeerRepository)
-	mockMeshService := new(MockMeshService)
-	mockAuthService := createTestAuthService()
-
-	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
-
 	ctx := context.Background()
 	peerID := domain.PeerID("test-peer")
 	streamID := domain.StreamID("test-stream")
 
 	t.Run("successful join stream", func(t *testing.T) {
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshService := new(MockMeshService)
+		mockAuthService := createTestAuthService()
+		server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
+
 		// Expectations
 		mockMeshService.On("AddPeer", ctx, mock.AnythingOfType("*domain.Peer")).Return(nil)
 		mockMeshService.On("FindOptimalSources", ctx, streamID, peerID, 4).Return([]*domain.Peer{}, nil)
@@ -240,10 +239,17 @@ func TestWebSocketServer_HandleJoinStream(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "peers_list", response["type"])
 
+		_ = conn.Close()
+		time.Sleep(50 * time.Millisecond) // allow server cleanup to run
 		mockMeshService.AssertExpectations(t)
 	})
 
 	t.Run("join stream with optimal sources", func(t *testing.T) {
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshService := new(MockMeshService)
+		mockAuthService := createTestAuthService()
+		server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
+
 		// Mock optimal sources
 		sources := []*domain.Peer{
 			{
@@ -306,25 +312,26 @@ func TestWebSocketServer_HandleJoinStream(t *testing.T) {
 		assert.NoError(t, err)
 
 		assert.Equal(t, "peers_list", response["type"])
-		peers, ok := response["peers"].([]interface{})
+		peersAny, ok := response["peers"].([]interface{})
 		assert.True(t, ok)
-		assert.Len(t, peers, 2)
+		assert.Len(t, peersAny, 2)
 
+		_ = conn.Close()
+		time.Sleep(50 * time.Millisecond) // allow server cleanup to run
 		mockMeshService.AssertExpectations(t)
 	})
 }
 
 func TestWebSocketServer_HandleMetricsUpdate(t *testing.T) {
-	mockPeerRepo := new(MockPeerRepository)
-	mockMeshService := new(MockMeshService)
-	mockAuthService := createTestAuthService()
-
-	server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
-
 	ctx := context.Background()
 	peerID := domain.PeerID("test-peer")
 
 	t.Run("successful metrics update", func(t *testing.T) {
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshService := new(MockMeshService)
+		mockAuthService := createTestAuthService()
+		server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
+
 		// Expectations
 		mockMeshService.On("UpdatePeerMetrics", ctx, peerID, mock.AnythingOfType("domain.NetworkMetrics")).Return(nil)
 		mockMeshService.On("RemovePeer", mock.Anything, peerID).Return(nil)
@@ -360,10 +367,17 @@ func TestWebSocketServer_HandleMetricsUpdate(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "metrics_updated", response["type"])
 
+		_ = conn.Close()
+		time.Sleep(50 * time.Millisecond) // allow server cleanup to run
 		mockMeshService.AssertExpectations(t)
 	})
 
 	t.Run("metrics update with invalid payload", func(t *testing.T) {
+		mockPeerRepo := new(MockPeerRepository)
+		mockMeshService := new(MockMeshService)
+		mockAuthService := createTestAuthService()
+		server := signal.NewWebSocketServer(mockPeerRepo, mockMeshService, mockAuthService, []string{"*"})
+
 		// Expectations for disconnection
 		mockMeshService.On("RemovePeer", mock.Anything, peerID).Return(nil)
 
@@ -381,9 +395,14 @@ func TestWebSocketServer_HandleMetricsUpdate(t *testing.T) {
 		assert.NoError(t, err)
 		defer conn.Close()
 
+		// Valid JSON, but invalid types -> should trigger server-side payload validation error.
 		metricsMsg := signal.SignalMessage{
-			Type:    "metrics_update",
-			Payload: json.RawMessage(`invalid json`),
+			Type: "metrics_update",
+			Payload: json.RawMessage(`{
+                "bandwidth": "bad",
+                "packet_loss": 0.02,
+                "latency": 50
+            }`),
 		}
 
 		err = conn.WriteJSON(metricsMsg)
@@ -396,6 +415,9 @@ func TestWebSocketServer_HandleMetricsUpdate(t *testing.T) {
 
 		// UpdatePeerMetrics should not be called with invalid payload
 		mockMeshService.AssertNotCalled(t, "UpdatePeerMetrics", ctx, peerID, mock.Anything)
+
+		_ = conn.Close()
+		time.Sleep(50 * time.Millisecond) // allow server cleanup to run
 	})
 }
 
@@ -587,6 +609,7 @@ func TestWebSocketServer_ConnectionManagement(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Check that peer is connected
+		time.Sleep(50 * time.Millisecond)
 		assert.True(t, server.IsPeerConnected(peerID))
 
 		// Get list of connected peers
@@ -628,6 +651,7 @@ func TestWebSocketServer_ConnectionManagement(t *testing.T) {
 		}
 
 		// Check that all peers are connected
+		time.Sleep(50 * time.Millisecond)
 		connectedPeers := server.GetConnectedPeers()
 		assert.Len(t, connectedPeers, len(peerIDs))
 

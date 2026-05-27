@@ -16,6 +16,7 @@ import (
 	webrtc "github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // MockMetricsService with full implementation of services.MetricsService interface
@@ -320,17 +321,27 @@ func TestSFUService_HandlePublisherAnswer(t *testing.T) {
 	peerID := domain.PeerID("test-publisher")
 	streamID := domain.StreamID("test-stream")
 
+	createAnswer := func(t *testing.T, offer webrtc.SessionDescription) webrtc.SessionDescription {
+		t.Helper()
+		pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+		require.NoError(t, err)
+		defer pc.Close()
+
+		require.NoError(t, pc.SetRemoteDescription(offer))
+		answer, err := pc.CreateAnswer(nil)
+		require.NoError(t, err)
+		require.NoError(t, pc.SetLocalDescription(answer))
+		<-webrtc.GatheringCompletePromise(pc)
+		return *pc.LocalDescription()
+	}
+
 	t.Run("successful publisher answer handling", func(t *testing.T) {
 		// First create publisher
 		offer, err := sfuService.CreatePublisherOffer(ctx, peerID, streamID)
 		assert.NoError(t, err)
 		assert.NotNil(t, offer)
 
-		// Create answer
-		answer := webrtc.SessionDescription{
-			Type: webrtc.SDPTypeAnswer,
-			SDP:  "mock-answer-sdp",
-		}
+		answer := createAnswer(t, offer)
 
 		// Execution
 		err = sfuService.HandlePublisherAnswer(ctx, peerID, answer)
@@ -341,13 +352,13 @@ func TestSFUService_HandlePublisherAnswer(t *testing.T) {
 
 	t.Run("publisher answer for non-existent publisher", func(t *testing.T) {
 		nonExistentPeerID := domain.PeerID("non-existent-publisher")
-		answer := webrtc.SessionDescription{
-			Type: webrtc.SDPTypeAnswer,
-			SDP:  "mock-answer-sdp",
-		}
+		// Valid SDP answer (generated from a real offer), but peer doesn't exist in SFU.
+		tmpOffer, err := sfuService.CreatePublisherOffer(ctx, domain.PeerID("tmp-publisher"), streamID)
+		require.NoError(t, err)
+		answer := createAnswer(t, tmpOffer)
 
 		// Execution
-		err := sfuService.HandlePublisherAnswer(ctx, nonExistentPeerID, answer)
+		err = sfuService.HandlePublisherAnswer(ctx, nonExistentPeerID, answer)
 
 		// Assertions
 		assert.Error(t, err)
@@ -381,14 +392,18 @@ func TestSFUService_HandleSubscriberAnswer(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, offer)
 
-		// Create answer
-		answer := webrtc.SessionDescription{
-			Type: webrtc.SDPTypeAnswer,
-			SDP:  "mock-answer-sdp",
-		}
+		pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+		require.NoError(t, err)
+		defer pc.Close()
+		require.NoError(t, pc.SetRemoteDescription(offer))
+		answer, err := pc.CreateAnswer(nil)
+		require.NoError(t, err)
+		require.NoError(t, pc.SetLocalDescription(answer))
+		<-webrtc.GatheringCompletePromise(pc)
+		finalAnswer := *pc.LocalDescription()
 
 		// Execution
-		err = sfuService.HandleSubscriberAnswer(ctx, peerID, answer)
+		err = sfuService.HandleSubscriberAnswer(ctx, peerID, finalAnswer)
 
 		// Assertions
 		assert.NoError(t, err)
@@ -434,10 +449,15 @@ func TestSFUService_PeerReconnection(t *testing.T) {
 		assert.NotNil(t, offer1)
 
 		// Handle answer
-		answer1 := webrtc.SessionDescription{
-			Type: webrtc.SDPTypeAnswer,
-			SDP:  "mock-answer-1",
-		}
+		pc1, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+		require.NoError(t, err)
+		defer pc1.Close()
+		require.NoError(t, pc1.SetRemoteDescription(offer1))
+		a1, err := pc1.CreateAnswer(nil)
+		require.NoError(t, err)
+		require.NoError(t, pc1.SetLocalDescription(a1))
+		<-webrtc.GatheringCompletePromise(pc1)
+		answer1 := *pc1.LocalDescription()
 		err = sfuService.HandlePublisherAnswer(ctx, peerID, answer1)
 		assert.NoError(t, err)
 
@@ -447,10 +467,15 @@ func TestSFUService_PeerReconnection(t *testing.T) {
 		assert.NotNil(t, offer2)
 
 		// Handle second answer
-		answer2 := webrtc.SessionDescription{
-			Type: webrtc.SDPTypeAnswer,
-			SDP:  "mock-answer-2",
-		}
+		pc2, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+		require.NoError(t, err)
+		defer pc2.Close()
+		require.NoError(t, pc2.SetRemoteDescription(offer2))
+		a2, err := pc2.CreateAnswer(nil)
+		require.NoError(t, err)
+		require.NoError(t, pc2.SetLocalDescription(a2))
+		<-webrtc.GatheringCompletePromise(pc2)
+		answer2 := *pc2.LocalDescription()
 		err = sfuService.HandlePublisherAnswer(ctx, peerID, answer2)
 		assert.NoError(t, err)
 
@@ -491,8 +516,25 @@ func TestSFUService_MultipleStreams(t *testing.T) {
 		assert.NotNil(t, offer2)
 
 		// Handle answers
-		answer1 := webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: "answer-1"}
-		answer2 := webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: "answer-2"}
+		pc1, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+		require.NoError(t, err)
+		defer pc1.Close()
+		require.NoError(t, pc1.SetRemoteDescription(offer1))
+		a1, err := pc1.CreateAnswer(nil)
+		require.NoError(t, err)
+		require.NoError(t, pc1.SetLocalDescription(a1))
+		<-webrtc.GatheringCompletePromise(pc1)
+		answer1 := *pc1.LocalDescription()
+
+		pc2, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+		require.NoError(t, err)
+		defer pc2.Close()
+		require.NoError(t, pc2.SetRemoteDescription(offer2))
+		a2, err := pc2.CreateAnswer(nil)
+		require.NoError(t, err)
+		require.NoError(t, pc2.SetLocalDescription(a2))
+		<-webrtc.GatheringCompletePromise(pc2)
+		answer2 := *pc2.LocalDescription()
 
 		err = sfuService.HandlePublisherAnswer(ctx, peerID, answer1)
 		assert.NoError(t, err)
@@ -503,7 +545,8 @@ func TestSFUService_MultipleStreams(t *testing.T) {
 		// Check metrics for both streams
 		metrics1 := metricsService.GetStreamMetrics(stream1)
 		metrics2 := metricsService.GetStreamMetrics(stream2)
-		assert.Equal(t, 1, metrics1.ActivePublishers)
+		// Same peer re-publishes on a different stream => stream1 publisher is replaced.
+		assert.Equal(t, 0, metrics1.ActivePublishers)
 		assert.Equal(t, 1, metrics2.ActivePublishers)
 	})
 }

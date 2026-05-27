@@ -61,6 +61,22 @@ Checklist:
 
 Full-container mode (`docker compose up`) can work on Linux; on Windows prefer host ingest or set `RILLNET_WEBRTC_NAT_1TO1_IP` to your LAN IP and ensure UDP `50000-50200` is forwarded.
 
+### TURN (recommended even for staging)
+
+For reliable connectivity across NAT/mobile networks, run a TURN server. The dev stack includes a `coturn` container with dev-only creds.
+
+Default dev config uses:
+
+- `turn:localhost:3478?transport=udp`
+- `turn:localhost:3478?transport=tcp`
+- user/pass: `dev` / `devpass`
+
+Production: inject TURN via env (don’t hardcode secrets in YAML):
+
+- `RILLNET_WEBRTC_TURN_URLS` (comma-separated)
+- `RILLNET_WEBRTC_TURN_USERNAME`
+- `RILLNET_WEBRTC_TURN_PASSWORD`
+
 ## Configuration profiles
 
 | File | Use |

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -37,11 +38,7 @@ type Config struct {
 	} `yaml:"signal"`
 
 	WebRTC struct {
-		ICEServers []struct {
-			URLs       []string `yaml:"urls"`
-			Username   string   `yaml:"username,omitempty"`
-			Credential string   `yaml:"credential,omitempty"`
-		} `yaml:"ice_servers"`
+		ICEServers []ICEServerConfig `yaml:"ice_servers"`
 		PortRange struct {
 			Min uint16 `yaml:"min"`
 			Max uint16 `yaml:"max"`
@@ -128,6 +125,12 @@ type Config struct {
 		LockTTL         time.Duration `yaml:"lock_ttl"`
 		PeerRegistryTTL time.Duration `yaml:"peer_registry_ttl"`
 	} `yaml:"distributed"`
+}
+
+type ICEServerConfig struct {
+	URLs       []string `yaml:"urls"`
+	Username   string   `yaml:"username,omitempty"`
+	Credential string   `yaml:"credential,omitempty"`
 }
 
 // Validate checks that configuration values are within acceptable ranges.
@@ -462,4 +465,37 @@ func (c *Config) applyEnvOverrides() {
 	if nat := os.Getenv("RILLNET_WEBRTC_NAT_1TO1_IP"); nat != "" {
 		c.WebRTC.NAT1To1IPs = []string{nat}
 	}
+
+	// Optional TURN configuration via env (preferred for production secrets).
+	// Comma-separated list of TURN/STUN URLs.
+	// Example:
+	//   RILLNET_WEBRTC_TURN_URLS=turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp
+	//   RILLNET_WEBRTC_TURN_USERNAME=user
+	//   RILLNET_WEBRTC_TURN_PASSWORD=pass
+	if urls := os.Getenv("RILLNET_WEBRTC_TURN_URLS"); urls != "" {
+		parsed := splitCommaTrim(urls)
+		if len(parsed) > 0 {
+			turn := ICEServerConfig{
+				URLs:       parsed,
+				Username:   os.Getenv("RILLNET_WEBRTC_TURN_USERNAME"),
+				Credential: os.Getenv("RILLNET_WEBRTC_TURN_PASSWORD"),
+			}
+			c.WebRTC.ICEServers = append(c.WebRTC.ICEServers, turn)
+		}
+	}
+}
+
+func splitCommaTrim(s string) []string {
+	out := make([]string, 0, 4)
+	start := 0
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == ',' {
+			part := strings.TrimSpace(s[start:i])
+			if part != "" {
+				out = append(out, part)
+			}
+			start = i + 1
+		}
+	}
+	return out
 }

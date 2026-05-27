@@ -170,6 +170,23 @@ func (s *SFUService) CreatePublisherOffer(ctx context.Context, peerID domain.Pee
 
 // createPublisherOfferInternal is the internal implementation without retry/circuit breaker
 func (s *SFUService) createPublisherOfferInternal(ctx context.Context, peerID domain.PeerID, streamID domain.StreamID) (webrtc.SessionDescription, error) {
+	// If this peer already has a publisher session, tear it down first.
+	// Important: close the old PC BEFORE registering the new one in s.publishers,
+	// otherwise the old PC's state callbacks could race and delete the new session.
+	var oldPC *webrtc.PeerConnection
+	var oldStreamID domain.StreamID
+	s.mu.Lock()
+	if existing, ok := s.publishers[peerID]; ok {
+		oldPC = existing.PC
+		oldStreamID = existing.StreamID
+		delete(s.publishers, peerID)
+	}
+	s.mu.Unlock()
+	if oldPC != nil {
+		_ = oldPC.Close()
+		s.metricsService.DecrementPublisherCount(oldStreamID)
+	}
+
 	pc, err := s.createPeerConnection()
 	if err != nil {
 		return webrtc.SessionDescription{}, fmt.Errorf("failed to create peer connection: %w", err)
@@ -264,12 +281,19 @@ func (s *SFUService) handlePublisherClientOfferInternal(ctx context.Context, pee
 		offer.Type = webrtc.SDPTypeOffer
 	}
 
+	var oldPC *webrtc.PeerConnection
+	var oldStreamID domain.StreamID
 	s.mu.Lock()
 	if existing, ok := s.publishers[peerID]; ok {
-		_ = existing.PC.Close()
+		oldPC = existing.PC
+		oldStreamID = existing.StreamID
 		delete(s.publishers, peerID)
 	}
 	s.mu.Unlock()
+	if oldPC != nil {
+		_ = oldPC.Close()
+		s.metricsService.DecrementPublisherCount(oldStreamID)
+	}
 
 	pc, err := s.createPeerConnection()
 	if err != nil {
