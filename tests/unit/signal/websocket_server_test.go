@@ -157,6 +157,34 @@ func (m *MockAuthService) ValidateRefreshToken(tokenString string) (*services.Cl
 	return args.Get(0).(*services.Claims), args.Error(1)
 }
 
+func (m *MockAuthService) RegisterUser(ctx context.Context, username, email, password string) (*domain.User, string, string, error) {
+	args := m.Called(ctx, username, email, password)
+	var u *domain.User
+	if args.Get(0) != nil {
+		u = args.Get(0).(*domain.User)
+	}
+	return u, args.String(1), args.String(2), args.Error(3)
+}
+
+func (m *MockAuthService) LoginUser(ctx context.Context, username, password string) (*domain.User, string, string, error) {
+	args := m.Called(ctx, username, password)
+	var u *domain.User
+	if args.Get(0) != nil {
+		u = args.Get(0).(*domain.User)
+	}
+	return u, args.String(1), args.String(2), args.Error(3)
+}
+
+func (m *MockAuthService) RotateRefreshToken(ctx context.Context, refreshToken string) (string, string, error) {
+	args := m.Called(ctx, refreshToken)
+	return args.String(0), args.String(1), args.Error(2)
+}
+
+func (m *MockAuthService) Logout(ctx context.Context, refreshToken string) error {
+	args := m.Called(ctx, refreshToken)
+	return args.Error(0)
+}
+
 func (m *MockAuthService) CheckStreamPermission(ctx context.Context, userID domain.UserID, streamID domain.StreamID, requiredRole domain.UserRole) error {
 	args := m.Called(ctx, userID, streamID, requiredRole)
 	return args.Error(0)

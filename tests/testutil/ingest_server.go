@@ -63,6 +63,8 @@ func NewIngestTestEnv(t *testing.T, cfg *config.Config) *IngestTestEnv {
 		cfg.Auth.AccessTokenTTL,
 		cfg.Auth.RefreshTokenTTL,
 		streamService,
+		nil,
+		nil,
 	)
 
 	var iceServers []webrtc.ICEServer

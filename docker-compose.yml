@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=rillnet
+      - POSTGRES_USER=rillnet
+      - POSTGRES_PASSWORD=rillnet
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - rillnet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rillnet -d rillnet"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes
@@ -43,6 +62,8 @@ services:
       - RILLNET_SERVER_ADDRESS=:8080
       - RILLNET_REDIS_ENABLED=true
       - RILLNET_REDIS_ADDRESS=redis:6379
+      - RILLNET_DB_ENABLED=true
+      - RILLNET_DB_DSN=postgres://rillnet:rillnet@postgres:5432/rillnet?sslmode=disable
       - RILLNET_JWT_SECRET=dev-docker-compose-secret-change-in-production
       - RILLNET_WEB_SERVER=http://rillnet-web
     volumes:
@@ -51,6 +72,8 @@ services:
       - rillnet-network
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/ready"]
@@ -149,6 +172,7 @@ services:
 
 volumes:
   redis_data:
+  postgres_data:
   prometheus_data:
   grafana_data:
 

@@ -16,6 +16,8 @@ done
 
 export RILLNET_CONFIG_PATH=configs/config.dev.host.yaml
 export RILLNET_REDIS_ADDRESS=127.0.0.1:6379
+export RILLNET_DB_ENABLED=true
+export RILLNET_DB_DSN=postgres://rillnet:rillnet@127.0.0.1:5432/rillnet?sslmode=disable
 export RILLNET_SERVER_ADDRESS=:8080
 export RILLNET_JWT_SECRET=dev-docker-compose-secret-change-in-production
 export RILLNET_REDIS_ENABLED=true

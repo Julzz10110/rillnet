@@ -2,13 +2,19 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"rillnet/internal/core/domain"
 	"rillnet/internal/core/ports"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -22,6 +28,10 @@ type AuthService interface {
 	GenerateRefreshToken(userID domain.UserID) (string, error)
 	ValidateToken(tokenString string) (*Claims, error)
 	ValidateRefreshToken(tokenString string) (*Claims, error)
+	RegisterUser(ctx context.Context, username, email, password string) (*domain.User, string, string, error) // user, access, refresh
+	LoginUser(ctx context.Context, username, password string) (*domain.User, string, string, error)         // user, access, refresh
+	RotateRefreshToken(ctx context.Context, refreshToken string) (string, string, error)                     // access, refresh
+	Logout(ctx context.Context, refreshToken string) error
 	CheckStreamPermission(ctx context.Context, userID domain.UserID, streamID domain.StreamID, requiredRole domain.UserRole) error
 	GetUserFromContext(ctx context.Context) (domain.UserID, error)
 }
@@ -37,6 +47,8 @@ type authService struct {
 	accessTokenTTL   time.Duration
 	refreshTokenTTL  time.Duration
 	streamService    ports.StreamService // Optional, can be nil
+	userRepo         ports.UserRepository
+	refreshRepo      ports.RefreshTokenRepository
 }
 
 func NewAuthService(
@@ -44,12 +56,16 @@ func NewAuthService(
 	accessTokenTTL time.Duration,
 	refreshTokenTTL time.Duration,
 	streamService ports.StreamService, // Can be nil for token-only validation
+	userRepo ports.UserRepository,
+	refreshRepo ports.RefreshTokenRepository,
 ) AuthService {
 	return &authService{
 		jwtSecret:       []byte(jwtSecret),
 		accessTokenTTL:  accessTokenTTL,
 		refreshTokenTTL: refreshTokenTTL,
 		streamService:   streamService,
+		userRepo:        userRepo,
+		refreshRepo:     refreshRepo,
 	}
 }
 
@@ -105,7 +121,170 @@ func (s *authService) ValidateToken(tokenString string) (*Claims, error) {
 }
 
 func (s *authService) ValidateRefreshToken(tokenString string) (*Claims, error) {
-	return s.ValidateToken(tokenString)
+	claims, err := s.ValidateToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+	if s.refreshRepo == nil {
+		// Backward-compatible mode: if no refresh repository configured, accept JWT-only.
+		return claims, nil
+	}
+	active, err := s.refreshRepo.IsActive(context.Background(), hashToken(tokenString), time.Now())
+	if err != nil {
+		return nil, err
+	}
+	if !active {
+		return nil, domain.ErrRefreshTokenRevoked
+	}
+	return claims, nil
+}
+
+func (s *authService) RegisterUser(ctx context.Context, username, email, password string) (*domain.User, string, string, error) {
+	// Backward-compatible stub mode (no persistent auth storage configured).
+	if s.userRepo == nil || s.refreshRepo == nil {
+		user := &domain.User{
+			ID:        domain.UserID(uuid.New().String()),
+			Username:  strings.TrimSpace(username),
+			Email:     strings.TrimSpace(strings.ToLower(email)),
+			CreatedAt: time.Now(),
+		}
+		access, err := s.GenerateToken(user.ID, user.Username)
+		if err != nil {
+			return nil, "", "", err
+		}
+		refresh, err := s.GenerateRefreshToken(user.ID)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return user, access, refresh, nil
+	}
+	username = strings.TrimSpace(username)
+	email = strings.TrimSpace(strings.ToLower(email))
+
+	hashBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("hash password: %w", err)
+	}
+	user := &domain.User{
+		ID:        domain.UserID(utilsGenerateUUID()),
+		Username:  username,
+		Email:     email,
+		CreatedAt: time.Now(),
+	}
+	if err := s.userRepo.Create(ctx, user, string(hashBytes)); err != nil {
+		return nil, "", "", err
+	}
+	access, err := s.GenerateToken(user.ID, user.Username)
+	if err != nil {
+		return nil, "", "", err
+	}
+	refresh, err := s.issueAndStoreRefreshToken(ctx, user.ID)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return user, access, refresh, nil
+}
+
+func (s *authService) LoginUser(ctx context.Context, username, password string) (*domain.User, string, string, error) {
+	// Backward-compatible stub mode (no persistent auth storage configured).
+	if s.userRepo == nil || s.refreshRepo == nil {
+		user := &domain.User{
+			ID:        domain.UserID(uuid.New().String()),
+			Username:  strings.TrimSpace(username),
+			CreatedAt: time.Now(),
+		}
+		access, err := s.GenerateToken(user.ID, user.Username)
+		if err != nil {
+			return nil, "", "", err
+		}
+		refresh, err := s.GenerateRefreshToken(user.ID)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return user, access, refresh, nil
+	}
+	username = strings.TrimSpace(username)
+	u, hash, err := s.userRepo.GetByUsername(ctx, username)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+		return nil, "", "", domain.ErrInvalidCredentials
+	}
+	access, err := s.GenerateToken(u.ID, u.Username)
+	if err != nil {
+		return nil, "", "", err
+	}
+	refresh, err := s.issueAndStoreRefreshToken(ctx, u.ID)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return u, access, refresh, nil
+}
+
+func (s *authService) RotateRefreshToken(ctx context.Context, refreshToken string) (string, string, error) {
+	// Backward-compatible stub mode (no refresh token persistence/rotation).
+	if s.refreshRepo == nil {
+		claims, err := s.ValidateRefreshToken(refreshToken)
+		if err != nil {
+			return "", "", err
+		}
+		access, err := s.GenerateToken(claims.UserID, claims.Username)
+		if err != nil {
+			return "", "", err
+		}
+		newRefresh, err := s.GenerateRefreshToken(claims.UserID)
+		if err != nil {
+			return "", "", err
+		}
+		return access, newRefresh, nil
+	}
+	claims, err := s.ValidateRefreshToken(refreshToken)
+	if err != nil {
+		return "", "", err
+	}
+
+	newRefresh, err := s.issueAndStoreRefreshToken(ctx, claims.UserID)
+	if err != nil {
+		return "", "", err
+	}
+	_ = s.refreshRepo.MarkReplaced(ctx, hashToken(refreshToken), hashToken(newRefresh))
+
+	access, err := s.GenerateToken(claims.UserID, claims.Username)
+	if err != nil {
+		return "", "", err
+	}
+	return access, newRefresh, nil
+}
+
+func (s *authService) Logout(ctx context.Context, refreshToken string) error {
+	if s.refreshRepo == nil {
+		return nil
+	}
+	return s.refreshRepo.Revoke(ctx, hashToken(refreshToken), time.Now())
+}
+
+func (s *authService) issueAndStoreRefreshToken(ctx context.Context, userID domain.UserID) (string, error) {
+	refresh, err := s.GenerateRefreshToken(userID)
+	if err != nil {
+		return "", err
+	}
+	expiresAt := time.Now().Add(s.refreshTokenTTL)
+	if err := s.refreshRepo.Store(ctx, userID, hashToken(refresh), expiresAt); err != nil {
+		return "", err
+	}
+	return refresh, nil
+}
+
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// utilsGenerateUUID isolates UUID generation so auth_service.go stays stdlib-only at call sites.
+func utilsGenerateUUID() string {
+	// NOTE: implemented in a small helper to avoid leaking uuid into domain package.
+	return uuid.New().String()
 }
 
 func (s *authService) CheckStreamPermission(ctx context.Context, userID domain.UserID, streamID domain.StreamID, requiredRole domain.UserRole) error {

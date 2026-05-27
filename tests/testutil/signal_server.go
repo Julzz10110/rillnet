@@ -48,6 +48,8 @@ func NewSignalTestServer(t *testing.T, cfg *config.Config) *SignalTestServer {
 		cfg.Auth.AccessTokenTTL,
 		cfg.Auth.RefreshTokenTTL,
 		nil,
+		nil,
+		nil,
 	)
 
 	wsServer := signalserver.NewWebSocketServer(peerRepo, meshService, authService, cfg.Auth.AllowedOrigins)

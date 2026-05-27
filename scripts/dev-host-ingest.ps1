@@ -25,6 +25,8 @@ if (-not $ready) {
 
 $env:RILLNET_CONFIG_PATH = "configs/config.dev.host.yaml"
 $env:RILLNET_REDIS_ADDRESS = "127.0.0.1:6379"
+$env:RILLNET_DB_ENABLED = "true"
+$env:RILLNET_DB_DSN = "postgres://rillnet:rillnet@127.0.0.1:5432/rillnet?sslmode=disable"
 $env:RILLNET_SERVER_ADDRESS = ":8080"
 $env:RILLNET_JWT_SECRET = "dev-docker-compose-secret-change-in-production"
 $env:RILLNET_REDIS_ENABLED = "true"

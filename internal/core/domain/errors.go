@@ -10,4 +10,7 @@ var (
 	ErrInsufficientQuality = errors.New("insufficient quality")
 	ErrPeerCapacityReached = errors.New("peer capacity reached")
 	ErrNoPublisherMedia    = errors.New("no publisher media available for stream")
+	ErrUserAlreadyExists   = errors.New("user already exists")
+	ErrInvalidCredentials  = errors.New("invalid credentials")
+	ErrRefreshTokenRevoked = errors.New("refresh token revoked")
 )

@@ -6,10 +6,12 @@ import (
 
 	"rillnet/internal/core/ports"
 	"rillnet/internal/infrastructure/repositories/memory"
+	pgrepo "rillnet/internal/infrastructure/repositories/postgres"
 	redisrepo "rillnet/internal/infrastructure/repositories/redis"
 	"rillnet/pkg/config"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
 
@@ -17,13 +19,34 @@ import (
 type RepositoryFactory struct {
 	useRedis    bool
 	redisClient *redis.Client
+	useDB       bool
+	dbPool      *pgxpool.Pool
 	logger      *zap.SugaredLogger
+}
+
+func (f *RepositoryFactory) DBPool() *pgxpool.Pool {
+	return f.dbPool
+}
+
+func (f *RepositoryFactory) CreateUserRepository() ports.UserRepository {
+	if f.dbPool != nil {
+		return pgrepo.NewUserRepository(f.dbPool)
+	}
+	return nil
+}
+
+func (f *RepositoryFactory) CreateRefreshTokenRepository() ports.RefreshTokenRepository {
+	if f.dbPool != nil {
+		return pgrepo.NewRefreshTokenRepository(f.dbPool)
+	}
+	return nil
 }
 
 // NewRepositoryFactory creates a new repository factory
 func NewRepositoryFactory(cfg *config.Config, logger *zap.SugaredLogger) (*RepositoryFactory, error) {
 	factory := &RepositoryFactory{
 		useRedis: cfg.Redis.Enabled,
+		useDB:    cfg.Database.Enabled,
 		logger:   logger,
 	}
 
@@ -46,6 +69,15 @@ func NewRepositoryFactory(cfg *config.Config, logger *zap.SugaredLogger) (*Repos
 
 	if !factory.useRedis {
 		logger.Info("using memory repositories")
+	}
+
+	if cfg.Database.Enabled {
+		pool, err := pgrepo.NewPool(context.Background(), cfg.Database.DSN)
+		if err != nil {
+			return nil, fmt.Errorf("database is enabled but connection failed: %w", err)
+		}
+		factory.dbPool = pool
+		logger.Info("using Postgres database")
 	}
 
 	return factory, nil
@@ -78,6 +110,9 @@ func (f *RepositoryFactory) CreateMeshRepository() ports.MeshRepository {
 func (f *RepositoryFactory) Close() error {
 	if f.redisClient != nil {
 		return redisrepo.CloseRedisClient(f.redisClient)
+	}
+	if f.dbPool != nil {
+		f.dbPool.Close()
 	}
 	return nil
 }

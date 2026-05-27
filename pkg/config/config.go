@@ -78,6 +78,11 @@ type Config struct {
 		PoolSize int    `yaml:"pool_size"`
 	} `yaml:"redis"`
 
+	Database struct {
+		Enabled bool   `yaml:"enabled"`
+		DSN     string `yaml:"dsn"`
+	} `yaml:"database"`
+
 	Auth struct {
 		JWTSecret        string        `yaml:"jwt_secret"`
 		AccessTokenTTL   time.Duration `yaml:"access_token_ttl"`
@@ -219,6 +224,13 @@ func (c *Config) Validate() error {
 		}
 		if c.Redis.PoolSize <= 0 {
 			return fmt.Errorf("redis.pool_size must be > 0 when redis.enabled=true")
+		}
+	}
+
+	// Database
+	if c.Database.Enabled {
+		if c.Database.DSN == "" {
+			return fmt.Errorf("database.dsn must not be empty when database.enabled=true")
 		}
 	}
 
@@ -390,6 +402,9 @@ func DefaultConfig() *Config {
 	cfg.Redis.DB = 0
 	cfg.Redis.PoolSize = 10
 
+	cfg.Database.Enabled = false
+	cfg.Database.DSN = ""
+
 	cfg.Auth.JWTSecret = "change-me-in-production"
 	cfg.Auth.AccessTokenTTL = 15 * time.Minute
 	cfg.Auth.RefreshTokenTTL = 7 * 24 * time.Hour // 7 days
@@ -464,6 +479,18 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if nat := os.Getenv("RILLNET_WEBRTC_NAT_1TO1_IP"); nat != "" {
 		c.WebRTC.NAT1To1IPs = []string{nat}
+	}
+
+	if v := os.Getenv("RILLNET_DB_ENABLED"); v != "" {
+		switch v {
+		case "1", "true", "TRUE", "yes", "YES":
+			c.Database.Enabled = true
+		case "0", "false", "FALSE", "no", "NO":
+			c.Database.Enabled = false
+		}
+	}
+	if dsn := os.Getenv("RILLNET_DB_DSN"); dsn != "" {
+		c.Database.DSN = dsn
 	}
 
 	// Optional TURN configuration via env (preferred for production secrets).

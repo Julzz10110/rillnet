@@ -51,6 +51,8 @@ func main() {
 		cfg.Auth.AccessTokenTTL,
 		cfg.Auth.RefreshTokenTTL,
 		nil, // Stream service not needed for WebSocket token validation
+		nil,
+		nil,
 	)
 
 	// Initialize WebSocket server

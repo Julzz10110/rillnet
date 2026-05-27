@@ -16,7 +16,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Expected services: `redis`, `rillnet-web`, `rillnet-ingest`, `rillnet-signal`, `prometheus`, `grafana`.
+Expected services: `postgres`, `redis`, `rillnet-web`, `rillnet-ingest`, `rillnet-signal`, `coturn`, `prometheus`, `grafana`.
 
 ### Health checks
 
@@ -32,7 +32,7 @@ curl -s http://localhost:8081/ready
 
 Open http://localhost
 
-1. Register or login (note: auth is stub — any password works until real user storage ships).
+1. Register or login.
 2. Start publishing (allow camera).
 3. In a second browser, login, refresh streams, join.
 

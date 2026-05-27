@@ -17,6 +17,7 @@ import (
 	"rillnet/internal/infrastructure/monitoring"
 	reliability "rillnet/internal/infrastructure/reliability"
 	repositories "rillnet/internal/infrastructure/repositories"
+	"rillnet/internal/infrastructure/db"
 	webrtcinfra "rillnet/internal/infrastructure/webrtc"
 	"rillnet/pkg/circuitbreaker"
 	"rillnet/pkg/config"
@@ -50,10 +51,18 @@ func main() {
 	}
 	defer func() { _ = repoFactory.Close() }()
 
+	if cfg.Database.Enabled && repoFactory.DBPool() != nil {
+		if err := db.Migrate(context.Background(), repoFactory.DBPool()); err != nil {
+			log.Fatalw("failed to run database migrations", "error", err)
+		}
+	}
+
 	// Initialize repositories
 	streamRepo := repoFactory.CreateStreamRepository()
 	peerRepo := repoFactory.CreatePeerRepository()
 	meshRepo := repoFactory.CreateMeshRepository()
+	userRepo := repoFactory.CreateUserRepository()
+	refreshRepo := repoFactory.CreateRefreshTokenRepository()
 
 	// Initialize services
 	qualityService := services.NewQualityService()
@@ -88,6 +97,8 @@ func main() {
 		cfg.Auth.AccessTokenTTL,
 		cfg.Auth.RefreshTokenTTL,
 		streamService,
+		userRepo,
+		refreshRepo,
 	)
 
 	// WebRTC configuration (including STUN/TURN from config)
