@@ -178,6 +178,40 @@ class RillNetApp {
         );
     }
 
+    async waitForPublisherMedia(streamId, timeoutMs = 45000) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            try {
+                const r = await this.apiClient.getWebRTCReadiness(streamId);
+                if (r.media_ready || r.publisher_ready) {
+                    return true;
+                }
+                const reg = r.publisher_registered ? 'yes' : 'no';
+                const ice = r.publisher_ice_state || '?';
+                const conn = r.publisher_connection_state || '?';
+                const tracks = r.forwarder_tracks ?? 0;
+                let hint = '';
+                if (reg === 'yes' && tracks === 0) {
+                    if (ice === 'checking' || ice === 'new') {
+                        hint =
+                            ' — open publisher tab DevTools: [RillNet Publisher] must reach ice=connected; on Windows use scripts/dev-host-ingest.ps1';
+                    } else if (ice === 'failed' || conn === 'failed') {
+                        hint = ' — ICE failed: run ingest on host (scripts/dev-host-ingest.ps1), not in Docker';
+                    }
+                } else if (reg === 'no') {
+                    hint = ' — publisher left SFU (republish or check publisher tab)';
+                }
+                this.logger.info(
+                    `Waiting for publisher camera on ${streamId} (sfu: registered=${reg}, ice=${ice}, conn=${conn}, tracks=${tracks})${hint}...`
+                );
+            } catch (_) {
+                this.logger.info('Waiting for publisher camera on stream ' + streamId + '...');
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+        return false;
+    }
+
     async ensureSignalConnected() {
         if (typeof this.apiClient.ensureAccessToken !== 'function') {
             throw new Error(
@@ -198,6 +232,8 @@ class RillNetApp {
         this.setupSignalHandlers();
         this.initializeUI();
         await this.refreshStreams();
+        if (this._streamRefreshTimer) clearInterval(this._streamRefreshTimer);
+        this._streamRefreshTimer = setInterval(() => this.refreshStreams(), 5000);
         this.setConnectionStatus('connected');
     }
 
@@ -267,6 +303,9 @@ class RillNetApp {
             this.isPublisher = true;
             sessionStorage.setItem('rillnet_live_stream', this.currentStreamId);
             this.updatePublisherUI(true);
+            this.logger.success(
+                'Publishing started. Open a second browser window, select this stream (marked [LIVE]), and Join.'
+            );
             await this.refreshStreams();
         } catch (error) {
             this.logger.error('Failed to start publisher: ' + error.message);
@@ -308,16 +347,18 @@ class RillNetApp {
         if (joinBtn) joinBtn.disabled = true;
         try {
             await this.apiClient.ensureAccessToken();
-            const readiness = await this.apiClient.getWebRTCReadiness(selectedStream);
-            if (!readiness.publisher_ready) {
+            const ready = await this.waitForPublisherMedia(selectedStream);
+            if (!ready) {
                 const live = sessionStorage.getItem('rillnet_live_stream');
-                let hint = 'Open a second tab, click Start Publishing on this stream, then Join here.';
+                let hint = 'In another tab: Start Publishing and wait until the camera preview is visible, then Join here.';
                 if (live && live !== selectedStream) {
-                    hint = `Publisher is active on "${live}". Select that stream in the list or publish on "${selectedStream}" first.`;
-                } else if (live === selectedStream) {
-                    hint = 'Publisher was started in another tab but SFU has no media (server may have restarted). Stop and Start Publishing again.';
+                    hint = `Publisher is on "${live}". Select that stream or publish on "${selectedStream}" first.`;
                 }
-                this.logger.error(`No live WebRTC publisher on stream ${selectedStream}. ${hint}`);
+                this.logger.error(
+                    `No camera media on stream ${selectedStream} yet. ${hint} ` +
+                    'Publisher tab: check ingest logs for "publisher started streaming track". ' +
+                    'Then run: docker compose up -d --build rillnet-ingest'
+                );
                 return;
             }
             await this.apiClient.joinStream(selectedStream, this.currentPeerID, false, { maxBitrate: 2000, codecs: ['VP8', 'Opus'] });
@@ -399,8 +440,10 @@ class RillNetApp {
             const option = document.createElement('option');
             option.value = stream.id || stream.stream_id || stream.ID;
             const name = stream.name || `Stream ${option.value}`;
-            const liveMark = option.value === sessionStorage.getItem('rillnet_live_stream') ? ' [LIVE]' : '';
-            option.textContent = `${name}${liveMark} (${stream.peer_count || 0} peers)`;
+            const serverLive = stream.publisher_live || stream.media_ready;
+            const liveMark = serverLive ? ' [LIVE]' : '';
+            const mediaHint = stream.media_ready ? ' · video' : (stream.publisher_live ? ' · no camera at SFU yet' : '');
+            option.textContent = `${name}${liveMark}${mediaHint} (${stream.peer_count || 0} peers)`;
             streamList.appendChild(option);
         });
         if (streams.find(s => (s.id || s.stream_id || s.ID) === currentValue)) streamList.value = currentValue;

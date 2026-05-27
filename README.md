@@ -1,6 +1,6 @@
 # RillNet - P2P Live Streaming Mesh
 
-[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![WebRTC](https://img.shields.io/badge/WebRTC-Pion-29ABE2?style=flat)](https://github.com/pion/webrtc)
 
@@ -79,7 +79,7 @@ RillNet implements a lightweight Selective Forwarding Unit (SFU) architecture co
 
 ### Prerequisites
 
-- Go 1.25 or higher
+- Go 1.26 or higher
 - Redis (for persistent storage)
 - Docker & Docker Compose (optional, for containerized deployment)
 
@@ -312,24 +312,28 @@ Access Grafana at `http://localhost:3000` (default credentials: admin/admin)
 
 ### Using Docker Compose
 
+Includes **Redis** for persistent stream/peer state.
+
 ```bash
-# Start all services
-docker-compose up -d
+# Start all services (web, ingest, signal, redis, prometheus, grafana)
+docker compose up -d --build
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
+
+# Health
+curl http://localhost:8080/ready
+curl http://localhost:8081/ready
 
 # Stop services
-docker-compose down
+docker compose down
 ```
+
+See [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) and [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md).
 
 ### Kubernetes Deployment
 
-Kubernetes manifests are available in `deployments/k8s/`:
-
-```bash
-kubectl apply -f deployments/k8s/
-```
+Kubernetes/Helm manifests are planned (see [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md)); not yet in this repository.
 
 ## 🧪 Testing
 
@@ -370,25 +374,25 @@ See [ROADMAP.md](ROADMAP.md) for detailed development plan.
 
 ### Current Status: 🚧 In Active Development
 
-**Phase 1 (Weeks 1-4)**: Critical Fixes
+**Weeks 1–4**: Critical fixes
 - [x] Project structure and architecture
 - [ ] YAML configuration loading
 - [ ] RTP packet forwarding
 - [ ] WebSocket signaling routing
 - [ ] Redis persistence
 
-**Phase 2 (Weeks 5-8)**: Security & Stability
+**Weeks 5–8**: Security & stability
 - [ ] Authentication & Authorization
 - [ ] Rate limiting
 - [ ] Graceful shutdown
 - [ ] Monitoring & Alerting
 
-**Phase 3 (Weeks 9-12)**: Optimization & Scaling
+**Weeks 9–12**: Optimization & scaling
 - [ ] Mesh network optimization
 - [ ] Adaptive bitrate
 - [ ] Horizontal scaling
 
-**Phase 4 (Weeks 13-16)**: Advanced Features
+**Weeks 13–16**: Advanced features
 - [ ] Distributed tracing
 - [ ] CDN integration
 - [ ] Complete documentation

@@ -212,10 +212,15 @@ func (h *StreamHandler) GetWebRTCReadiness(c *gin.Context) {
 		return
 	}
 
-	ready := h.webrtcService.HasActiveMedia(c.Request.Context(), streamID)
+	status := h.webrtcService.GetStreamWebRTCStatus(c.Request.Context(), streamID)
 	c.JSON(http.StatusOK, gin.H{
-		"stream_id":       streamID,
-		"publisher_ready": ready,
+		"stream_id":                streamID,
+		"publisher_ready":          status.MediaReady,
+		"media_ready":              status.MediaReady,
+		"publisher_registered":     status.PublisherRegistered,
+		"forwarder_tracks":         status.ForwarderTracks,
+		"publisher_ice_state":      status.PublisherICEState,
+		"publisher_connection_state": status.PublisherConnState,
 	})
 }
 
@@ -226,8 +231,27 @@ func (h *StreamHandler) ListStreams(c *gin.Context) {
 		return
 	}
 
+	items := make([]gin.H, 0, len(streams))
+	for _, stream := range streams {
+		wrtc := h.webrtcService.GetStreamWebRTCStatus(c.Request.Context(), stream.ID)
+		items = append(items, gin.H{
+			"ID":                   stream.ID,
+			"id":                   stream.ID,
+			"Name":                 stream.Name,
+			"name":                 stream.Name,
+			"Owner":                stream.Owner,
+			"owner":                stream.Owner,
+			"Active":               stream.Active,
+			"active":               stream.Active,
+			"MaxPeers":             stream.MaxPeers,
+			"publisher_live":       wrtc.PublisherRegistered,
+			"media_ready":          wrtc.MediaReady,
+			"forwarder_tracks":     wrtc.ForwarderTracks,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"streams": streams,
+		"streams": items,
 	})
 }
 
@@ -236,11 +260,25 @@ func (h *StreamHandler) CreatePublisherOffer(c *gin.Context) {
 	streamID := domain.StreamID(c.Param("id"))
 
 	var req struct {
-		PeerID domain.PeerID `json:"peer_id" binding:"required"`
+		PeerID domain.PeerID              `json:"peer_id" binding:"required"`
+		Offer  *webrtc.SessionDescription `json:"offer"`
 	}
 
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Offer != nil && req.Offer.SDP != "" {
+		answer, err := h.webrtcService.HandlePublisherClientOffer(c.Request.Context(), req.PeerID, streamID, *req.Offer)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"type": "answer",
+			"sdp":  answer.SDP,
+		})
 		return
 	}
 

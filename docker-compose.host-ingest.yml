@@ -1,0 +1,25 @@
+# Override for local WebRTC on Windows/macOS: run ingest on the host, not in Docker.
+# Usage: see scripts/dev-host-ingest.ps1 or docs/LOCAL_SETUP.md
+
+services:
+  redis:
+    ports:
+      - "6379:6379"
+
+  rillnet-web:
+    volumes:
+      - ./web/nginx.host-ingest.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      rillnet-signal:
+        condition: service_started
+
+  rillnet-signal:
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  rillnet-ingest:
+    profiles:
+      - docker-ingest

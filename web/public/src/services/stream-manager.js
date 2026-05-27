@@ -74,15 +74,20 @@ class StreamManager {
                 this.peerConnection.addTrack(track, this.localStream);
             });
 
-            const serverOffer = await this.apiClient.createPublisherOffer(streamId, this.peerId);
+            const offer = await this.peerConnection.createOffer();
+            await this.peerConnection.setLocalDescription(offer);
+
+            const serverAnswer = await this.apiClient.publishStreamOffer(
+                streamId,
+                this.peerId,
+                this.peerConnection.localDescription
+            );
             await this.peerConnection.setRemoteDescription({
-                type: 'offer',
-                sdp: serverOffer.sdp,
+                type: 'answer',
+                sdp: serverAnswer.sdp,
             });
 
-            const answer = await this.peerConnection.createAnswer();
-            await this.peerConnection.setLocalDescription(answer);
-            await this.apiClient.handlePublisherAnswer(streamId, this.peerId, answer);
+            this.logPublisherConnectionState('after SFU answer');
 
             this.isPublisher = true;
             this.currentStreamId = streamId;
@@ -303,11 +308,18 @@ class StreamManager {
         };
 
         this.peerConnection.ontrack = (event) => {
-            this.remoteStream = event.streams[0];
+            const stream = event.streams[0] || new MediaStream([event.track]);
+            if (!this.remoteStream) {
+                this.remoteStream = stream;
+            } else if (!this.remoteStream.getTracks().includes(event.track)) {
+                this.remoteStream.addTrack(event.track);
+            }
 
             const remoteVideo = document.getElementById('remoteVideo');
             if (remoteVideo) {
                 remoteVideo.srcObject = this.remoteStream;
+                const overlay = document.getElementById('remoteOverlay');
+                if (overlay) overlay.classList.remove('active');
                 const playPromise = remoteVideo.play();
                 if (playPromise) {
                     playPromise.catch((err) => {
@@ -320,6 +332,13 @@ class StreamManager {
 
             this.emit('streamReceived', this.remoteStream);
         };
+    }
+
+    logPublisherConnectionState(label) {
+        if (!this.peerConnection) return;
+        const ice = this.peerConnection.iceConnectionState;
+        const conn = this.peerConnection.connectionState;
+        console.info(`[RillNet Publisher] ${label}: ice=${ice}, connection=${conn}`);
     }
 
     getVideoConstraints(quality) {

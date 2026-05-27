@@ -11,7 +11,7 @@ SIGNAL_BIN = $(BIN_DIR)/signal-server
 
 .PHONY: help build run clean \
 	test test-unit test-integration test-smoke test-coverage test-all \
-	lint smoke-stack compose-up compose-down compose-logs \
+	lint smoke-stack compose-up compose-down compose-logs compose-host-up \
 	test-help
 
 .DEFAULT_GOAL := help
@@ -38,6 +38,7 @@ help:
 	@echo "  compose-up     docker compose up -d --build"
 	@echo "  compose-down   docker compose down"
 	@echo "  compose-logs   docker compose logs -f"
+	@echo "  compose-host-up  Redis+web+signal in Docker (ingest: scripts/dev-host-ingest.*)"
 	@echo ""
 	@echo "More: make test-help  (targets under tests/)"
 
@@ -97,3 +98,6 @@ compose-down:
 
 compose-logs:
 	docker compose logs -f
+
+compose-host-up:
+	docker compose -f docker-compose.host-stack.yml up -d --build

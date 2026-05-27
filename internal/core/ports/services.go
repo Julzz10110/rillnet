@@ -31,9 +31,20 @@ type MeshService interface {
 
 type WebRTCService interface {
 	CreatePublisherOffer(ctx context.Context, peerID domain.PeerID, streamID domain.StreamID) (webrtc.SessionDescription, error)
+	HandlePublisherClientOffer(ctx context.Context, peerID domain.PeerID, streamID domain.StreamID, offer webrtc.SessionDescription) (webrtc.SessionDescription, error)
 	HandlePublisherAnswer(ctx context.Context, peerID domain.PeerID, answer webrtc.SessionDescription) error
 	CreateSubscriberOffer(ctx context.Context, peerID domain.PeerID, streamID domain.StreamID, sourcePeers []domain.PeerID) (webrtc.SessionDescription, error)
 	HandleSubscriberAnswer(ctx context.Context, peerID domain.PeerID, answer webrtc.SessionDescription) error
 	SwitchSubscriberQuality(ctx context.Context, peerID domain.PeerID, quality string) error
 	HasActiveMedia(ctx context.Context, streamID domain.StreamID) bool
+	GetStreamWebRTCStatus(ctx context.Context, streamID domain.StreamID) StreamWebRTCStatus
+}
+
+// StreamWebRTCStatus describes SFU-side WebRTC state for a stream (in-memory, single ingest).
+type StreamWebRTCStatus struct {
+	PublisherRegistered bool   `json:"publisher_registered"`
+	MediaReady          bool   `json:"media_ready"`
+	ForwarderTracks     int    `json:"forwarder_tracks"`
+	PublisherICEState   string `json:"publisher_ice_state,omitempty"`
+	PublisherConnState  string `json:"publisher_connection_state,omitempty"`
 }

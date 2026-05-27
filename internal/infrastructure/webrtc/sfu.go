@@ -27,6 +27,7 @@ type WebRTCConfig struct {
 		Min uint16
 		Max uint16
 	}
+	NAT1To1IPs []string
 	Simulcast  bool
 	MaxBitrate int
 }
@@ -184,27 +185,34 @@ func (s *SFUService) createPublisherOfferInternal(ctx context.Context, peerID do
 		return webrtc.SessionDescription{}, err
 	}
 
-	// Create video tracks for simulcast
 	videoTracks := make(map[string]*webrtc.TrackLocalStaticRTP)
-	qualities := []string{"low", "medium", "high"}
-
-	for _, quality := range qualities {
+	if s.config.Simulcast {
+		for _, quality := range []string{"low", "medium", "high"} {
+			videoTrack, err := webrtc.NewTrackLocalStaticRTP(
+				webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8},
+				fmt.Sprintf("video-%s", quality),
+				fmt.Sprintf("pion-video-%s", quality),
+			)
+			if err != nil {
+				return webrtc.SessionDescription{}, err
+			}
+			videoTracks[quality] = videoTrack
+		}
+	} else {
 		videoTrack, err := webrtc.NewTrackLocalStaticRTP(
 			webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8},
-			fmt.Sprintf("video-%s", quality),
-			fmt.Sprintf("pion-video-%s", quality),
+			"video",
+			"pion-video",
 		)
 		if err != nil {
 			return webrtc.SessionDescription{}, err
 		}
-		videoTracks[quality] = videoTrack
+		videoTracks["medium"] = videoTrack
 	}
 
-	// Add tracks to peer connection
 	if _, err := pc.AddTrack(audioTrack); err != nil {
 		return webrtc.SessionDescription{}, err
 	}
-
 	for _, track := range videoTracks {
 		if _, err := pc.AddTrack(track); err != nil {
 			return webrtc.SessionDescription{}, err
@@ -230,21 +238,81 @@ func (s *SFUService) createPublisherOfferInternal(ctx context.Context, peerID do
 	s.publishers[peerID] = publisher
 	s.mu.Unlock()
 
-	// Create offer
-	offer, err := pc.CreateOffer(nil)
+	s.metricsService.IncrementPublisherCount(streamID)
+	return s.finishLocalOffer(pc)
+}
+
+// HandlePublisherClientOffer lets the browser send the SDP offer (recommended behind Docker/NAT).
+func (s *SFUService) HandlePublisherClientOffer(ctx context.Context, peerID domain.PeerID, streamID domain.StreamID, offer webrtc.SessionDescription) (webrtc.SessionDescription, error) {
+	if s.retryConfig.Enabled {
+		result, err := retry.RetryWithResult(ctx, s.retryConfig, func() (webrtc.SessionDescription, error) {
+			res, err := s.circuitBreaker.ExecuteWithResult(ctx, func() (interface{}, error) {
+				return s.handlePublisherClientOfferInternal(ctx, peerID, streamID, offer)
+			})
+			if err != nil {
+				return webrtc.SessionDescription{}, err
+			}
+			return res.(webrtc.SessionDescription), nil
+		})
+		return result, err
+	}
+	return s.handlePublisherClientOfferInternal(ctx, peerID, streamID, offer)
+}
+
+func (s *SFUService) handlePublisherClientOfferInternal(ctx context.Context, peerID domain.PeerID, streamID domain.StreamID, offer webrtc.SessionDescription) (webrtc.SessionDescription, error) {
+	if offer.Type == 0 {
+		offer.Type = webrtc.SDPTypeOffer
+	}
+
+	s.mu.Lock()
+	if existing, ok := s.publishers[peerID]; ok {
+		_ = existing.PC.Close()
+		delete(s.publishers, peerID)
+	}
+	s.mu.Unlock()
+
+	pc, err := s.createPeerConnection()
 	if err != nil {
 		return webrtc.SessionDescription{}, err
 	}
 
-	if err := pc.SetLocalDescription(offer); err != nil {
+	pc.OnTrack(s.handlePublisherTrack(peerID, streamID))
+	pc.OnICEConnectionStateChange(s.handleICEConnectionState(peerID))
+	pc.OnConnectionStateChange(s.handleConnectionState(peerID))
+
+	publisher := &Publisher{
+		PeerID:      peerID,
+		StreamID:    streamID,
+		PC:          pc,
+		VideoTracks: make(map[string]*webrtc.TrackLocalStaticRTP),
+		Tracks:      make(map[domain.TrackID]*webrtc.TrackLocalStaticRTP),
+		CreatedAt:   time.Now(),
+	}
+
+	if err := pc.SetRemoteDescription(offer); err != nil {
+		_ = pc.Close()
+		return webrtc.SessionDescription{}, fmt.Errorf("set publisher offer: %w", err)
+	}
+
+	s.mu.Lock()
+	s.publishers[peerID] = publisher
+	s.mu.Unlock()
+
+	answer, err := s.finishLocalAnswer(pc)
+	if err != nil {
+		_ = pc.Close()
+		s.mu.Lock()
+		delete(s.publishers, peerID)
+		s.mu.Unlock()
 		return webrtc.SessionDescription{}, err
 	}
 
 	s.metricsService.IncrementPublisherCount(streamID)
-	if ld := pc.LocalDescription(); ld != nil {
-		return *ld, nil
-	}
-	return offer, nil
+	s.logger.Infow("publisher session started from browser offer",
+		"peer_id", peerID,
+		"stream_id", streamID,
+	)
+	return answer, nil
 }
 
 // HandlePublisherAnswer handles answer from publisher
@@ -418,28 +486,57 @@ func (s *SFUService) createSubscriberOfferInternal(ctx context.Context, peerID d
 	s.subscribers[peerID] = subscriber
 	s.mu.Unlock()
 
-	offer, err := pc.CreateOffer(nil)
+	s.metricsService.IncrementSubscriberCount(streamID)
+	offer, err := s.finishLocalOffer(pc)
 	if err != nil {
-		_ = pc.Close()
-		s.mu.Lock()
-		delete(s.subscribers, peerID)
-		s.mu.Unlock()
-		return webrtc.SessionDescription{}, fmt.Errorf("create subscriber offer: %w", err)
-	}
-
-	if err := pc.SetLocalDescription(offer); err != nil {
 		_ = pc.Close()
 		s.mu.Lock()
 		delete(s.subscribers, peerID)
 		s.mu.Unlock()
 		return webrtc.SessionDescription{}, err
 	}
+	return offer, nil
+}
 
-	s.metricsService.IncrementSubscriberCount(streamID)
+// finishLocalAnswer creates an answer and waits for ICE gathering.
+func (s *SFUService) finishLocalAnswer(pc *webrtc.PeerConnection) (webrtc.SessionDescription, error) {
+	answer, err := pc.CreateAnswer(nil)
+	if err != nil {
+		return webrtc.SessionDescription{}, err
+	}
+	if err := pc.SetLocalDescription(answer); err != nil {
+		return webrtc.SessionDescription{}, err
+	}
+	s.waitICEGathering(pc)
+	if ld := pc.LocalDescription(); ld != nil {
+		return *ld, nil
+	}
+	return answer, nil
+}
+
+// finishLocalOffer creates an offer and waits for ICE gathering so the SDP includes host candidates.
+func (s *SFUService) finishLocalOffer(pc *webrtc.PeerConnection) (webrtc.SessionDescription, error) {
+	offer, err := pc.CreateOffer(nil)
+	if err != nil {
+		return webrtc.SessionDescription{}, err
+	}
+	if err := pc.SetLocalDescription(offer); err != nil {
+		return webrtc.SessionDescription{}, err
+	}
+	s.waitICEGathering(pc)
 	if ld := pc.LocalDescription(); ld != nil {
 		return *ld, nil
 	}
 	return offer, nil
+}
+
+func (s *SFUService) waitICEGathering(pc *webrtc.PeerConnection) {
+	gatherDone := webrtc.GatheringCompletePromise(pc)
+	select {
+	case <-gatherDone:
+	case <-time.After(10 * time.Second):
+		s.logger.Warnw("ICE gathering timed out, returning partial local description")
+	}
 }
 
 // HandleSubscriberAnswer handles answer from subscriber
@@ -507,6 +604,13 @@ func (s *SFUService) createPeerConnection() (*webrtc.PeerConnection, error) {
 	if s.config.PortRange.Min > 0 && s.config.PortRange.Max > 0 {
 		_ = settingEngine.SetEphemeralUDPPortRange(s.config.PortRange.Min, s.config.PortRange.Max)
 	}
+	if len(s.config.NAT1To1IPs) > 0 {
+		settingEngine.SetNAT1To1IPs(s.config.NAT1To1IPs, webrtc.ICECandidateTypeHost)
+	}
+	settingEngine.SetNetworkTypes([]webrtc.NetworkType{
+		webrtc.NetworkTypeUDP4,
+		webrtc.NetworkTypeTCP4,
+	})
 
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(mediaEngine),
@@ -638,8 +742,10 @@ func (s *SFUService) handleICEConnectionState(peerID domain.PeerID) func(webrtc.
 			"ice_state", state,
 		)
 
-		// Do not tear down on ICE "disconnected" — it is often transient during setup.
-		if state == webrtc.ICEConnectionStateFailed || state == webrtc.ICEConnectionStateClosed {
+		switch state {
+		case webrtc.ICEConnectionStateFailed:
+			s.logger.Warnw("peer ICE failed (session kept for retry)", "peer_id", peerID)
+		case webrtc.ICEConnectionStateClosed:
 			s.handlePeerDisconnect(peerID)
 		}
 	}
@@ -653,16 +759,46 @@ func (s *SFUService) handleConnectionState(peerID domain.PeerID) func(webrtc.Pee
 			"connection_state", state,
 		)
 
-		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
+		switch state {
+		case webrtc.PeerConnectionStateFailed:
+			s.logger.Warnw("peer connection failed (session kept; ICE may recover)", "peer_id", peerID)
+		case webrtc.PeerConnectionStateClosed:
 			s.handlePeerDisconnect(peerID)
 		}
 	}
 }
 
-// HasActiveMedia reports whether the SFU can offer media for subscribers on this stream.
+// HasActiveMedia reports whether real publisher media is being forwarded (not placeholder tracks).
 func (s *SFUService) HasActiveMedia(_ context.Context, streamID domain.StreamID) bool {
-	tracks, _ := s.collectSubscriberTracks(streamID, nil)
-	return len(tracks) > 0
+	return s.GetStreamWebRTCStatus(context.Background(), streamID).MediaReady
+}
+
+// GetStreamWebRTCStatus returns SFU WebRTC state for a stream (single ingest process).
+func (s *SFUService) GetStreamWebRTCStatus(_ context.Context, streamID domain.StreamID) ports.StreamWebRTCStatus {
+	status := ports.StreamWebRTCStatus{}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, pub := range s.publishers {
+		if pub.StreamID != streamID {
+			continue
+		}
+		status.PublisherRegistered = true
+		if pub.PC != nil {
+			status.PublisherICEState = pub.PC.ICEConnectionState().String()
+			status.PublisherConnState = pub.PC.ConnectionState().String()
+		}
+		break
+	}
+
+	for _, fwd := range s.trackForwarders {
+		if fwd.StreamID == streamID && fwd.Track != nil {
+			status.ForwarderTracks++
+		}
+	}
+	status.MediaReady = status.ForwarderTracks > 0
+	return status
 }
 
 // processRTCP processes RTCP packets from RTPReceiver to extract quality metrics

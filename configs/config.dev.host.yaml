@@ -1,5 +1,5 @@
-# Development / Docker Compose profile
-# Mount as configs/config.yaml in containers or set RILLNET_CONFIG_PATH=configs/config.dev.yaml
+# Ingest/signal on the host; Redis + nginx in Docker (see docker-compose.host-ingest.yml).
+# WebRTC uses OS UDP ports — avoids Docker Desktop UDP port-range issues on Windows.
 
 server:
   address: ":8080"
@@ -18,11 +18,6 @@ webrtc:
     - urls:
         - "stun:stun.l.google.com:19302"
         - "stun:stun1.l.google.com:19302"
-  port_range:
-    min: 50000
-    max: 50200
-  nat_1to1_ips:
-    - "127.0.0.1"
   simulcast: false
   max_bitrate: 5000
 
@@ -55,8 +50,7 @@ logging:
 
 redis:
   enabled: true
-  # Docker Compose overrides via RILLNET_REDIS_ADDRESS=redis:6379
-  address: "localhost:6379"
+  address: "127.0.0.1:6379"
   password: ""
   db: 0
   pool_size: 10

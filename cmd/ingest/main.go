@@ -111,7 +111,10 @@ func main() {
 		ICEServers: iceServers,
 		Simulcast:  cfg.WebRTC.Simulcast,
 		MaxBitrate: cfg.WebRTC.MaxBitrate,
+		NAT1To1IPs: cfg.WebRTC.NAT1To1IPs,
 	}
+	webrtcConfig.PortRange.Min = cfg.WebRTC.PortRange.Min
+	webrtcConfig.PortRange.Max = cfg.WebRTC.PortRange.Max
 
 	// Configure retry and circuit breaker for SFU
 	retryCfg := retry.Config{

@@ -46,8 +46,10 @@ type Config struct {
 			Min uint16 `yaml:"min"`
 			Max uint16 `yaml:"max"`
 		} `yaml:"port_range"`
-		Simulcast  bool `yaml:"simulcast"`
-		MaxBitrate int  `yaml:"max_bitrate"`
+		// NAT1To1IPs advertises host IPs in ICE candidates (required for browser ↔ Docker ingest).
+		NAT1To1IPs []string `yaml:"nat_1to1_ips"`
+		Simulcast  bool     `yaml:"simulcast"`
+		MaxBitrate int      `yaml:"max_bitrate"`
 	} `yaml:"webrtc"`
 
 	Mesh MeshConfig `yaml:"mesh"`
@@ -456,5 +458,8 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if password := os.Getenv("RILLNET_REDIS_PASSWORD"); password != "" {
 		c.Redis.Password = password
+	}
+	if nat := os.Getenv("RILLNET_WEBRTC_NAT_1TO1_IP"); nat != "" {
+		c.WebRTC.NAT1To1IPs = []string{nat}
 	}
 }

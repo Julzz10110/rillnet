@@ -162,19 +162,13 @@ class APIClient {
         return this.request('GET', `/api/v1/streams/${streamId}/webrtc/ready`);
     }
 
-    // WebRTC endpoints (SFU: server creates offer, client returns answer)
-    async createPublisherOffer(streamId, peerId) {
+    // Publisher: browser sends offer, SFU returns answer (works better with Docker/NAT).
+    async publishStreamOffer(streamId, peerId, offer) {
         return this.request('POST', `/api/v1/streams/${streamId}/publisher/offer`, {
             peer_id: peerId,
-        });
-    }
-
-    async handlePublisherAnswer(streamId, peerId, answer) {
-        return this.request('POST', `/api/v1/streams/${streamId}/publisher/answer`, {
-            peer_id: peerId,
-            answer: {
-                type: answer.type,
-                sdp: answer.sdp,
+            offer: {
+                type: offer.type,
+                sdp: offer.sdp,
             },
         });
     }

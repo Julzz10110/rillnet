@@ -36,6 +36,7 @@ services:
       dockerfile: deployments/docker/ingest.Dockerfile
     ports:
       - "8080:8080"
+      - "50000-50200:50000-50200/udp"
     environment:
       - RILLNET_CONFIG_PATH=/root/configs/config.yaml
       - RILLNET_LOG_LEVEL=debug
